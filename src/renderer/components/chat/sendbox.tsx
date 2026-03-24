@@ -456,12 +456,8 @@ const SendBox: React.FC<{
     }
   };
 
-  // Calculate button disabled state and style
+  // Calculate button disabled state
   const isButtonDisabled = disabled || isUploading || (!input.trim() && domSnippets.length === 0);
-  const buttonStyle = {
-    backgroundColor: isButtonDisabled ? undefined : '#000000',
-    borderColor: isButtonDisabled ? undefined : '#000000',
-  };
 
   // Reusable send button component
   const sendButton = (
@@ -470,7 +466,6 @@ const SendBox: React.FC<{
       type='primary'
       disabled={isButtonDisabled}
       className='send-button-custom'
-      style={buttonStyle}
       icon={<ArrowUp theme='filled' size='14' fill='white' strokeWidth={5} />}
       onClick={() => {
         sendMessageHandler();

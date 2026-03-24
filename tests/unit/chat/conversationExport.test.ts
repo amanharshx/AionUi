@@ -6,7 +6,9 @@ import {
   buildConversationExportText,
   buildDefaultExportFileName,
   getDefaultExportFileNameSource,
+  joinFilePath,
   normalizeExportFileName,
+  resolveExportBaseDirectory,
 } from '@/renderer/utils/chat/conversationExport';
 
 const conversation = {
@@ -116,5 +118,20 @@ describe('conversationExport', () => {
     expect(buildDefaultExportFileName(conversation.id, getDefaultExportFileNameSource(conversation, messages))).toBe(
       '2026-03-24-conv-1-okay-currently-the-opening-screen-looks-like-thi.txt'
     );
+  });
+
+  it('uses localized fallback labels when no shareable messages exist', () => {
+    const transcript = buildConversationExportText(conversation, [], labels);
+
+    expect(transcript).toContain('No messages');
+    expect(transcript).toContain('Conversation: Feature Review');
+  });
+
+  it('joins file paths and resolves export base directories safely', () => {
+    expect(joinFilePath('/workspace', 'export.txt')).toBe('/workspace/export.txt');
+    expect(joinFilePath('C:\\workspace', 'export.txt')).toBe('C:\\workspace\\export.txt');
+    expect(resolveExportBaseDirectory('/workspace', '/Desktop')).toBe('/workspace');
+    expect(resolveExportBaseDirectory('', '/Desktop')).toBe('/Desktop');
+    expect(resolveExportBaseDirectory()).toBe('');
   });
 });

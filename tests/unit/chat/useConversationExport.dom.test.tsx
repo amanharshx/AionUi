@@ -124,4 +124,44 @@ describe('useConversationExport', () => {
     expect(success).toHaveBeenLastCalledWith('Copied');
     expect(error).not.toHaveBeenCalled();
   });
+
+  it('reports unavailable export when no conversation id exists', async () => {
+    const success = vi.fn();
+    const error = vi.fn();
+
+    const { result } = renderHook(() =>
+      useConversationExport({
+        workspace: '/workspace',
+        t,
+        messageApi: { success, error },
+      })
+    );
+
+    await act(async () => {
+      await result.current.openExportFlow();
+    });
+
+    expect(error).toHaveBeenCalledWith('messages.export.unavailable');
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('reports prepare failure when conversation loading throws', async () => {
+    mockConversationGet.mockRejectedValueOnce(new Error('boom'));
+    const error = vi.fn();
+
+    const { result } = renderHook(() =>
+      useConversationExport({
+        conversationId: 'conv-1',
+        workspace: '/workspace',
+        t,
+        messageApi: { success: vi.fn(), error },
+      })
+    );
+
+    await act(async () => {
+      await result.current.openExportFlow();
+    });
+
+    expect(error).toHaveBeenCalledWith('messages.export.prepareFailed');
+  });
 });

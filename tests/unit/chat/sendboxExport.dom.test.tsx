@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SendBox from '@/renderer/components/chat/sendbox';
 import { ConversationProvider } from '@/renderer/hooks/context/ConversationContext';
@@ -80,8 +80,8 @@ vi.mock('react-i18next', () => ({
 const onSend = vi.fn().mockResolvedValue(undefined);
 const onSlashBuiltinCommand = vi.fn();
 
-const SendBoxHarness: React.FC = () => {
-  const [value, setValue] = useState('/export');
+const SendBoxHarness: React.FC<{ initialValue?: string }> = ({ initialValue = '/export' }) => {
+  const [value, setValue] = useState(initialValue);
   return (
     <ConversationProvider value={{ conversationId: 'conv-1', workspace: '/workspace', type: 'gemini' }}>
       <SendBox value={value} onChange={setValue} onSend={onSend} onSlashBuiltinCommand={onSlashBuiltinCommand} />
@@ -199,5 +199,60 @@ describe('SendBox export flow', () => {
         data: expect.stringContaining('hello export'),
       });
     });
+  });
+
+  it('closes the export flow when normal text is typed after opening it', async () => {
+    render(<SendBoxHarness />);
+
+    const input = screen.getByRole('textbox');
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(await screen.findByText('messages.export.copyLabel')).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: 'plain message' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('messages.export.copyLabel')).not.toBeInTheDocument();
+    });
+  });
+
+  it('does not send the message when Enter is used inside the export overlay', async () => {
+    render(<SendBoxHarness />);
+
+    const input = screen.getByRole('textbox');
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: 'Enter' });
+    });
+    expect(await screen.findByText('messages.export.copyLabel')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: 'Enter' });
+    });
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(await screen.findByText('messages.export.copySuccess')).toBeInTheDocument();
+  });
+
+  it('keeps the export overlay active instead of the normal slash menu after /export is opened', async () => {
+    render(<SendBoxHarness />);
+
+    const input = screen.getByRole('textbox');
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(await screen.findByText('messages.export.copyLabel')).toBeInTheDocument();
+    expect(screen.queryByText('/open')).not.toBeInTheDocument();
+    expect(screen.queryByText('/export')).not.toBeInTheDocument();
+  });
+
+  it('still executes the builtin /open command separately from /export', async () => {
+    render(<SendBoxHarness initialValue='/open' />);
+
+    fireEvent.click(screen.getByRole('option', { name: /\/open/i }));
+
+    await waitFor(() => {
+      expect(onSlashBuiltinCommand).toHaveBeenCalledWith('open');
+    });
+    expect(screen.queryByText('messages.export.copyLabel')).not.toBeInTheDocument();
   });
 });
