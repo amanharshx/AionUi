@@ -6,7 +6,7 @@
 
 import { Worker, type MessagePort } from 'worker_threads';
 import * as path from 'path';
-import type { ExtPermissions } from './permissions';
+import { getSandboxPermissionDeniedError, type ExtPermissions } from './permissions';
 
 /**
  * Extension Sandbox — Worker Thread isolation for extension code execution.
@@ -217,6 +217,19 @@ export class SandboxHost {
 
   private handleMessage(msg: SandboxMessage): void {
     switch (msg.type) {
+      case 'api-call': {
+        const error = getSandboxPermissionDeniedError(msg.method, this.options.permissions);
+        if (error) {
+          this.worker?.postMessage({
+            type: 'api-response',
+            id: msg.id,
+            error,
+          } satisfies SandboxMessage);
+          return;
+        }
+        // Allowed api-call messages continue through the normal worker message flow.
+        break;
+      }
       case 'api-response': {
         const pending = this.pendingCalls.get(msg.id);
         if (pending) {
