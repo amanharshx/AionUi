@@ -85,52 +85,23 @@ export function useBtwCommand(conversationId?: string, enabled = true) {
           return;
         }
 
-        switch (response.data.status) {
-          case 'ok':
-            Message.success(t('conversation.sideQuestion.answered'));
-            setState({
-              answer: response.data.answer,
-              isLoading: false,
-              isOpen: true,
-              question,
-            });
-            return;
-          case 'noAnswer':
-            Message.success(t('conversation.sideQuestion.answered'));
-            setState({
-              answer: t('conversation.sideQuestion.noAnswer'),
-              isLoading: false,
-              isOpen: true,
-              question,
-            });
-            return;
-          case 'unsupported':
-            Message.warning(t('conversation.sideQuestion.unsupported'));
-            setState({
-              answer: t('conversation.sideQuestion.unsupported'),
-              isLoading: false,
-              isOpen: true,
-              question,
-            });
-            return;
-          case 'toolsRequired':
-            Message.info(t('conversation.sideQuestion.toolsRequired'));
-            setState({
-              answer: t('conversation.sideQuestion.toolsRequired'),
-              isLoading: false,
-              isOpen: true,
-              question,
-            });
-            return;
-          case 'invalid':
-            Message.warning(t('conversation.sideQuestion.emptyQuestion'));
-            setState({
-              answer: t('conversation.sideQuestion.emptyQuestion'),
-              isLoading: false,
-              isOpen: true,
-              question,
-            });
-            return;
+        const statusMap: Record<string, { toast: typeof Message.info; key: string }> = {
+          ok: { toast: Message.success, key: 'answered' },
+          noAnswer: { toast: Message.success, key: 'noAnswer' },
+          unsupported: { toast: Message.warning, key: 'unsupported' },
+          toolsRequired: { toast: Message.info, key: 'toolsRequired' },
+          invalid: { toast: Message.warning, key: 'emptyQuestion' },
+        };
+
+        const entry = statusMap[response.data.status];
+        if (entry) {
+          const text =
+            response.data.status === 'ok'
+              ? response.data.answer
+              : t(`conversation.sideQuestion.${entry.key}` as Parameters<typeof t>[0]);
+          entry.toast(response.data.status === 'ok' ? t('conversation.sideQuestion.answered') : text);
+          setState({ answer: text, isLoading: false, isOpen: true, question });
+          return;
         }
       } catch {
         if (requestId !== requestIdRef.current) {

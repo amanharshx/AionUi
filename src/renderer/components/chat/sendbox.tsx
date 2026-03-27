@@ -259,7 +259,7 @@ const SendBox: React.FC<{
       });
     }
     return commands;
-  }, [conversationContext?.conversationId, onSlashBuiltinCommand, t]);
+  }, [conversationContext?.conversationId, enableBtw, onSlashBuiltinCommand, t]);
 
   const mergedSlashCommands = useMemo(() => {
     const map = new Map<string, SlashCommandItem>();
