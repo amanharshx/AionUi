@@ -244,7 +244,7 @@ const SendBox: React.FC<{
       });
     }
     return commands;
-  }, [onSlashBuiltinCommand, t]);
+  }, [enableBtw, onSlashBuiltinCommand, t]);
 
   const mergedSlashCommands = useMemo(() => {
     const map = new Map<string, SlashCommandItem>();
