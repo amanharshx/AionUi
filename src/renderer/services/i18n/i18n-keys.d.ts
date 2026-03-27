@@ -310,6 +310,7 @@ export type I18nKey =
   | 'conversation.sideQuestion.emptyQuestion'
   | 'conversation.sideQuestion.error'
   | 'conversation.sideQuestion.loading'
+  | 'conversation.sideQuestion.noAnswer'
   | 'conversation.sideQuestion.parentTaskRunning'
   | 'conversation.sideQuestion.started'
   | 'conversation.sideQuestion.title'

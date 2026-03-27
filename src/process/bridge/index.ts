@@ -54,7 +54,7 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initShellBridge();
   initFsBridge();
   initFileWatchBridge();
-  initConversationBridge(deps.conversationService, deps.workerTaskManager, deps.conversationRepo);
+  initConversationBridge(deps.conversationService, deps.workerTaskManager);
   initApplicationBridge(deps.workerTaskManager);
   initGeminiConversationBridge(deps.workerTaskManager);
   // 额外的 Gemini 辅助桥（订阅检测等）需要在对话桥初始化后可用 / extra helpers after core bridges

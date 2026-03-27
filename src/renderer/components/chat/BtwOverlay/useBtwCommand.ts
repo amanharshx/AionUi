@@ -95,6 +95,15 @@ export function useBtwCommand(conversationId?: string, enabled = true) {
               question,
             });
             return;
+          case 'noAnswer':
+            Message.success(t('conversation.sideQuestion.answered'));
+            setState({
+              answer: t('conversation.sideQuestion.noAnswer'),
+              isLoading: false,
+              isOpen: true,
+              question,
+            });
+            return;
           case 'unsupported':
             Message.warning(t('conversation.sideQuestion.unsupported'));
             setState({
@@ -114,7 +123,7 @@ export function useBtwCommand(conversationId?: string, enabled = true) {
             });
             return;
         }
-      } catch (error) {
+      } catch {
         if (requestId !== requestIdRef.current) {
           return;
         }

@@ -55,7 +55,7 @@ export async function initBridgeStandalone(): Promise<void> {
   initShellBridgeStandalone();
   initFileWatchBridge();
   initFsBridge();
-  initConversationBridge(conversationService, workerTaskManager, repo);
+  initConversationBridge(conversationService, workerTaskManager);
   initGeminiConversationBridge(workerTaskManager);
   initGeminiBridge();
   initBedrockBridge();

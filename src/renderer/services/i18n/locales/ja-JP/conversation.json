@@ -188,6 +188,7 @@
     "description": "現在の会話について短い補足質問をする",
     "started": "補足質問を開始しています...",
     "answered": "補足質問に回答しました。",
+    "noAnswer": "現在の会話コンテキストには明確な答えがありません。",
     "loading": "考え中...",
     "parentTaskRunning": "メインのタスクはバックグラウンドで実行中です。",
     "dismissHint": "Escape、Enter、Space で閉じる",

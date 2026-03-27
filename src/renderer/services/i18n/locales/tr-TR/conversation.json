@@ -183,6 +183,7 @@
     "description": "Mevcut konuşma hakkında hızlı bir yan soru sor",
     "started": "Yan soru başlatılıyor...",
     "answered": "Yan soru yanıtlandı.",
+    "noAnswer": "Geçerli konuşma bağlamında net bir yanıt yok.",
     "loading": "Düşünüyor...",
     "parentTaskRunning": "Ana görev arka planda çalışmaya devam ediyor.",
     "dismissHint": "Kapatmak için Escape, Enter veya Space tuşuna basın",
