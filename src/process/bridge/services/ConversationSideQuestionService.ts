@@ -9,9 +9,16 @@ import type { OpenAIChatCompletionParams } from '@/common/api/OpenAI2AnthropicCo
 import type { ConversationSideQuestionResult } from '@/common/adapter/ipcBridge';
 import type { TMessage } from '@/common/chat/chatLib';
 import type { TChatConversation, TProviderWithModel } from '@/common/config/storage';
+import type {
+  AcpBackend,
+  AcpPermissionRequest,
+  AcpSessionUpdate,
+} from '@/common/types/acpTypes';
 import type { IConversationRepository } from '@process/services/database/IConversationRepository';
+import { AcpConnection } from '@process/agent/acp/AcpConnection';
 import type { IConversationService } from '@process/services/IConversationService';
 import { ProcessConfig } from '@process/utils/initStorage';
+import { ACP_BACKENDS_ALL } from '@/common/types/acpTypes';
 
 const SIDE_QUESTION_SYSTEM_PROMPT =
   'You are answering a brief side question about an ongoing conversation. ' +
@@ -24,11 +31,25 @@ const RESERVED_TOKENS = 1_024;
 const MAX_MESSAGE_COUNT = 1_000;
 const APPROX_CHARS_PER_TOKEN = 4;
 const MAX_SERIALIZED_MESSAGE_CHARS = 2_000;
+const ACP_SIDE_QUESTION_TIMEOUT_MS = 30_000;
+const ACP_SIDE_QUESTION_PROMPT_TIMEOUT_SECONDS = 30;
 
 type ResolvedProvider = {
   provider: TProviderWithModel;
   proxy?: string;
 };
+
+type ResolvedAcpContext = {
+  acpSessionId: string;
+  backend: AcpBackend;
+  cliPath?: string;
+  customEnv?: Record<string, string>;
+  customArgs?: string[];
+  workspace: string;
+};
+
+class AcpSideQuestionUnsupportedError extends Error {}
+class AcpSideQuestionFailedError extends Error {}
 
 function hasProviderBackedModel(
   conversation: TChatConversation
@@ -173,15 +194,39 @@ export class ConversationSideQuestionService {
     }
 
     const resolvedProvider = await this.resolveProviderForSideQuestion(conversation);
-    if (!resolvedProvider) {
-      console.info('[ConversationSideQuestionService] No provider-backed model available for /btw', {
-        conversationId,
-        conversationType: conversation.type,
-      });
-      return { status: 'unsupported' };
+    if (resolvedProvider) {
+      return await this.askWithProvider(conversationId, trimmedQuestion, resolvedProvider);
     }
 
-    const messagesResult = await this.repo.getMessages(conversation.id, 0, MAX_MESSAGE_COUNT, 'ASC');
+    const resolvedAcpContext = await this.resolveAcpSideQuestionContext(conversation);
+    if (resolvedAcpContext) {
+      try {
+        const answer = await this.askWithAcpFork(conversationId, trimmedQuestion, resolvedAcpContext);
+        return {
+          status: 'ok',
+          answer: answer || 'The conversation context does not contain a clear answer.',
+        };
+      } catch (error) {
+        if (error instanceof AcpSideQuestionUnsupportedError) {
+          return { status: 'unsupported' };
+        }
+        throw error;
+      }
+    }
+
+    console.info('[ConversationSideQuestionService] No supported /btw execution path available', {
+      conversationId,
+      conversationType: conversation.type,
+    });
+    return { status: 'unsupported' };
+  }
+
+  private async askWithProvider(
+    conversationId: string,
+    trimmedQuestion: string,
+    resolvedProvider: ResolvedProvider
+  ): Promise<ConversationSideQuestionResult> {
+    const messagesResult = await this.repo.getMessages(conversationId, 0, MAX_MESSAGE_COUNT, 'ASC');
     const transcript = buildTranscript(messagesResult.data, resolvedProvider.provider.contextLimit);
     const prompt = `Conversation transcript:\n${transcript || '[no persisted transcript available]'}\n\nSide question: ${trimmedQuestion}`;
 
@@ -219,11 +264,89 @@ export class ConversationSideQuestionService {
     console.info('[ConversationSideQuestionService] /btw answer generated', {
       conversationId,
       answerLength: answer.length,
+      transport: 'provider',
     });
     return {
       status: 'ok',
       answer: answer || 'The conversation context does not contain a clear answer.',
     };
+  }
+
+  private async askWithAcpFork(
+    conversationId: string,
+    question: string,
+    context: ResolvedAcpContext
+  ): Promise<string> {
+    console.info('[ConversationSideQuestionService] Starting ACP /btw fork', {
+      backend: context.backend,
+      conversationId,
+      hasCliPath: Boolean(context.cliPath),
+      workspace: context.workspace,
+    });
+
+    const connection = new AcpConnection();
+    connection.setPromptTimeout(ACP_SIDE_QUESTION_PROMPT_TIMEOUT_SECONDS);
+
+    const completion = this.createAcpCompletionPromise(connection, conversationId, context.backend);
+
+    try {
+      await this.runWithTimeout(
+        (async () => {
+          await connection.connect(
+            context.backend,
+            context.cliPath,
+            context.workspace,
+            context.customArgs,
+            context.customEnv
+          );
+
+          try {
+            const response = await connection.newSession(context.workspace, {
+              resumeSessionId: context.acpSessionId,
+              forkSession: true,
+              mcpServers: [],
+            });
+            console.info('[ConversationSideQuestionService] ACP /btw fork session created', {
+              backend: context.backend,
+              conversationId,
+              forkedSessionId: response.sessionId,
+              parentSessionId: context.acpSessionId,
+            });
+          } catch (error) {
+            console.info('[ConversationSideQuestionService] ACP /btw fork unsupported', {
+              backend: context.backend,
+              conversationId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw new AcpSideQuestionUnsupportedError('ACP forked side questions are not supported for this backend.');
+          }
+
+          await Promise.all([
+            completion.promise,
+            connection.sendPrompt(this.buildAcpSideQuestionPrompt(question)),
+          ]);
+        })(),
+        ACP_SIDE_QUESTION_TIMEOUT_MS
+      );
+
+      const answer = completion.getAnswer();
+      console.info('[ConversationSideQuestionService] ACP /btw answer generated', {
+        answerLength: answer.length,
+        backend: context.backend,
+        conversationId,
+        transport: 'acp',
+      });
+      return answer;
+    } finally {
+      completion.dispose();
+      await connection.disconnect().catch((error: unknown) => {
+        console.warn('[ConversationSideQuestionService] Failed to disconnect ACP /btw runner', {
+          backend: context.backend,
+          conversationId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
   }
 
   private async resolveProviderForSideQuestion(conversation: TChatConversation): Promise<ResolvedProvider | null> {
@@ -254,5 +377,170 @@ export class ConversationSideQuestionService {
     const proxy = provider.platform === 'gemini' ? (await ProcessConfig.get('gemini.config'))?.proxy : undefined;
 
     return { provider, proxy };
+  }
+
+  private async resolveAcpSideQuestionContext(conversation: TChatConversation): Promise<ResolvedAcpContext | null> {
+    if (conversation.type !== 'acp') {
+      return null;
+    }
+
+    const extra = conversation.extra;
+    if (!extra?.backend || !extra.acpSessionId || !extra.workspace) {
+      return null;
+    }
+
+    if (extra.backend === 'custom') {
+      if (!extra.customAgentId) {
+        return null;
+      }
+      const customAgents = (await ProcessConfig.get('acp.customAgents')) || [];
+      const customAgent = customAgents.find((agent) => agent.id === extra.customAgentId);
+      if (!customAgent?.defaultCliPath?.trim()) {
+        return null;
+      }
+      return {
+        acpSessionId: extra.acpSessionId,
+        backend: extra.backend,
+        cliPath: extra.cliPath || customAgent.defaultCliPath.trim(),
+        customArgs: customAgent.acpArgs,
+        customEnv: customAgent.env,
+        workspace: extra.workspace,
+      };
+    }
+
+    const acpConfig = await ProcessConfig.get('acp.config');
+    const backendConfig = ACP_BACKENDS_ALL[extra.backend];
+    const cliPath = extra.cliPath || acpConfig?.[extra.backend]?.cliPath || backendConfig?.cliCommand;
+    if (!cliPath?.trim()) {
+      return null;
+    }
+
+    return {
+      acpSessionId: extra.acpSessionId,
+      backend: extra.backend,
+      cliPath: cliPath.trim(),
+      customArgs: backendConfig?.acpArgs,
+      workspace: extra.workspace,
+    };
+  }
+
+  private buildAcpSideQuestionPrompt(question: string): string {
+    return [
+      'Answer this brief side question using the current session context.',
+      'Do not use tools.',
+      'Do not ask follow-up questions.',
+      'Return one concise answer only.',
+      '',
+      `Side question: ${question}`,
+    ].join('\n');
+  }
+
+  private createAcpCompletionPromise(connection: AcpConnection, conversationId: string, backend: AcpBackend): {
+    dispose: () => void;
+    getAnswer: () => string;
+    promise: Promise<void>;
+  } {
+    let settled = false;
+    let answer = '';
+
+    const fail = (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
+    };
+    const succeed = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<void>((innerResolve, innerReject) => {
+      resolve = innerResolve;
+      reject = innerReject;
+    });
+
+    const previousSessionUpdate = connection.onSessionUpdate;
+    const previousPermissionRequest = connection.onPermissionRequest;
+    const previousEndTurn = connection.onEndTurn;
+    const previousDisconnect = connection.onDisconnect;
+
+    connection.onSessionUpdate = (data: AcpSessionUpdate) => {
+      previousSessionUpdate(data);
+      if (data.update.sessionUpdate === 'agent_message_chunk' && data.update.content.type === 'text') {
+        answer += data.update.content.text || '';
+        return;
+      }
+      if (data.update.sessionUpdate === 'tool_call' || data.update.sessionUpdate === 'tool_call_update') {
+        console.warn('[ConversationSideQuestionService] ACP /btw rejected tool activity', {
+          backend,
+          conversationId,
+          update: data.update.sessionUpdate,
+        });
+        connection.cancelPrompt();
+        fail(new AcpSideQuestionFailedError('ACP /btw attempted to use tools.'));
+      }
+    };
+
+    connection.onPermissionRequest = async (data: AcpPermissionRequest) => {
+      console.warn('[ConversationSideQuestionService] ACP /btw rejected permission request', {
+        backend,
+        conversationId,
+        tool: data.toolCall.title,
+      });
+      connection.cancelPrompt();
+      fail(new AcpSideQuestionFailedError('ACP /btw requires permission and cannot continue.'));
+      return {
+        optionId: data.options.find((option) => option.kind.startsWith('reject'))?.optionId || 'reject_once',
+      };
+    };
+
+    connection.onEndTurn = () => {
+      previousEndTurn();
+      succeed();
+    };
+
+    connection.onDisconnect = (error) => {
+      previousDisconnect(error);
+      fail(
+        new AcpSideQuestionFailedError(
+          `ACP /btw runner disconnected unexpectedly (${error.code ?? 'unknown'}:${error.signal ?? 'none'}).`
+        )
+      );
+    };
+
+    return {
+      dispose: () => {
+        connection.onSessionUpdate = previousSessionUpdate;
+        connection.onPermissionRequest = previousPermissionRequest;
+        connection.onEndTurn = previousEndTurn;
+        connection.onDisconnect = previousDisconnect;
+      },
+      getAnswer: () => answer.trim(),
+      promise,
+    };
+  }
+
+  private async runWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new AcpSideQuestionFailedError('ACP /btw timed out.'));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
   }
 }

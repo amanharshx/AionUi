@@ -3,8 +3,23 @@ import type { TChatConversation } from '@/common/config/storage';
 import type { IConversationRepository } from '@/process/services/database/IConversationRepository';
 import type { IConversationService } from '@/process/services/IConversationService';
 
-const mockCreateRotatingClient = vi.fn();
-const mockProcessConfigGet = vi.fn();
+const {
+  mockAcpConnect,
+  mockAcpDisconnect,
+  mockAcpNewSession,
+  mockAcpSendPrompt,
+  mockAcpSetPromptTimeout,
+  mockCreateRotatingClient,
+  mockProcessConfigGet,
+} = vi.hoisted(() => ({
+  mockAcpConnect: vi.fn(),
+  mockAcpDisconnect: vi.fn(),
+  mockAcpNewSession: vi.fn(),
+  mockAcpSendPrompt: vi.fn(),
+  mockAcpSetPromptTimeout: vi.fn(),
+  mockCreateRotatingClient: vi.fn(),
+  mockProcessConfigGet: vi.fn(),
+}));
 
 vi.mock('@/common/api/ClientFactory', () => ({
   ClientFactory: {
@@ -15,6 +30,22 @@ vi.mock('@/common/api/ClientFactory', () => ({
 vi.mock('@process/utils/initStorage', () => ({
   ProcessConfig: {
     get: (...args: unknown[]) => mockProcessConfigGet(...args),
+  },
+}));
+
+vi.mock('@process/agent/acp/AcpConnection', () => ({
+  AcpConnection: class {
+    onSessionUpdate: (data: any) => void = () => {};
+    onPermissionRequest: (data: any) => Promise<{ optionId: string }> = () => Promise.resolve({ optionId: 'reject_once' });
+    onEndTurn: () => void = () => {};
+    onDisconnect: (error: { code: number | null; signal: NodeJS.Signals | null }) => void = () => {};
+
+    connect = (...args: unknown[]) => mockAcpConnect(...args);
+    newSession = (...args: unknown[]) => mockAcpNewSession(...args);
+    sendPrompt = (...args: unknown[]) => mockAcpSendPrompt(this, ...args);
+    disconnect = (...args: unknown[]) => mockAcpDisconnect(...args);
+    setPromptTimeout = (...args: unknown[]) => mockAcpSetPromptTimeout(...args);
+    cancelPrompt = vi.fn();
   },
 }));
 
@@ -68,6 +99,27 @@ function makeRepo(messages: unknown[] = []): IConversationRepository {
 describe('ConversationSideQuestionService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAcpConnect.mockResolvedValue(undefined);
+    mockAcpNewSession.mockResolvedValue({ sessionId: 'fork-1' });
+    mockAcpSendPrompt.mockImplementation(async (connection: {
+      onEndTurn: () => void;
+      onSessionUpdate: (data: any) => void;
+    }) => {
+      connection.onSessionUpdate({
+        sessionId: 'fork-1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text: 'The file was `config/aion.json`.',
+          },
+        },
+      });
+      connection.onEndTurn();
+      return {};
+    });
+    mockAcpDisconnect.mockResolvedValue(undefined);
+    mockAcpSetPromptTimeout.mockReturnValue(undefined);
   });
 
   it('returns invalid for an empty question', async () => {
@@ -91,6 +143,83 @@ describe('ConversationSideQuestionService', () => {
     const service = new ConversationSideQuestionService(makeService(conversation), makeRepo());
 
     await expect(service.ask('conv-1', 'what model are we using?')).resolves.toEqual({
+      status: 'unsupported',
+    });
+  });
+
+  it('uses an ACP forked session when ACP session metadata is available', async () => {
+    const conversation = {
+      id: 'conv-1',
+      type: 'acp',
+      name: 'ACP Conversation',
+      extra: {
+        acpSessionId: 'parent-session-1',
+        backend: 'claude',
+        workspace: '/tmp/ws',
+      },
+      createTime: Date.now(),
+      modifyTime: Date.now(),
+    } as TChatConversation;
+    const service = new ConversationSideQuestionService(makeService(conversation), makeRepo());
+
+    mockProcessConfigGet.mockImplementation(async (key: string) => {
+      if (key === 'model.config') {
+        return [];
+      }
+      if (key === 'acp.config') {
+        return {
+          claude: {
+            cliPath: 'claude',
+          },
+        };
+      }
+      return undefined;
+    });
+
+    await expect(service.ask('conv-1', 'what file did we use?')).resolves.toEqual({
+      status: 'ok',
+      answer: 'The file was `config/aion.json`.',
+    });
+
+    expect(mockAcpConnect).toHaveBeenCalledWith('claude', 'claude', '/tmp/ws', undefined, undefined);
+    expect(mockAcpNewSession).toHaveBeenCalledWith('/tmp/ws', {
+      forkSession: true,
+      mcpServers: [],
+      resumeSessionId: 'parent-session-1',
+    });
+  });
+
+  it('returns unsupported when the ACP backend rejects forked sessions', async () => {
+    const conversation = {
+      id: 'conv-1',
+      type: 'acp',
+      name: 'ACP Conversation',
+      extra: {
+        acpSessionId: 'parent-session-1',
+        backend: 'claude',
+        workspace: '/tmp/ws',
+      },
+      createTime: Date.now(),
+      modifyTime: Date.now(),
+    } as TChatConversation;
+    const service = new ConversationSideQuestionService(makeService(conversation), makeRepo());
+
+    mockProcessConfigGet.mockImplementation(async (key: string) => {
+      if (key === 'model.config') {
+        return [];
+      }
+      if (key === 'acp.config') {
+        return {
+          claude: {
+            cliPath: 'claude',
+          },
+        };
+      }
+      return undefined;
+    });
+    mockAcpNewSession.mockRejectedValueOnce(new Error('fork not supported'));
+
+    await expect(service.ask('conv-1', 'what file did we use?')).resolves.toEqual({
       status: 'unsupported',
     });
   });
