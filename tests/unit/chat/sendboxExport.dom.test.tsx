@@ -14,6 +14,7 @@ vi.mock('@/common', () => ({
   ipcBridge: {
     conversation: {
       get: { invoke: (...args: unknown[]) => mockConversationGet(...args) },
+      warmup: { invoke: vi.fn().mockResolvedValue(undefined) },
     },
     database: {
       getConversationMessages: { invoke: (...args: unknown[]) => mockMessagesGet(...args) },
@@ -44,6 +45,10 @@ vi.mock('@/renderer/hooks/file/useDragUpload', () => ({
     isFileDragging: false,
     dragHandlers: {},
   })),
+}));
+
+vi.mock('@renderer/hooks/file/useUploadState', () => ({
+  useUploadState: vi.fn(() => ({ isUploading: false })),
 }));
 
 vi.mock('@/renderer/hooks/file/usePasteService', () => ({
