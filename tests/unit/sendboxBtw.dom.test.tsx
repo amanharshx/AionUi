@@ -15,6 +15,14 @@ const mockBtwState = {
 
 const mockUseConversationContextSafe = vi.fn(() => ({ conversationId: 'conv-1' }));
 const mockUseLayoutContext = vi.fn(() => ({ isMobile: false }));
+const mockUseSlashCommandController = vi.fn(() => ({
+  isOpen: false,
+  filteredCommands: [],
+  activeIndex: 0,
+  setActiveIndex: vi.fn(),
+  onSelectByIndex: vi.fn(),
+  onKeyDown: vi.fn(() => false),
+}));
 const mockUsePreviewContext = vi.fn(() => ({
   setSendBoxHandler: vi.fn(),
   domSnippets: [],
@@ -117,14 +125,7 @@ vi.mock('@/renderer/components/chat/BtwOverlay/useBtwCommand', () => ({
 }));
 
 vi.mock('@/renderer/hooks/chat/useSlashCommandController', () => ({
-  useSlashCommandController: () => ({
-    isOpen: false,
-    filteredCommands: [],
-    activeIndex: 0,
-    setActiveIndex: vi.fn(),
-    onSelectByIndex: vi.fn(),
-    onKeyDown: vi.fn(() => false),
-  }),
+  useSlashCommandController: (args: unknown) => mockUseSlashCommandController(args),
 }));
 
 vi.mock('@/renderer/utils/ui/focus', () => ({
@@ -176,6 +177,14 @@ describe('SendBox /btw handling', () => {
       removeDomSnippet: vi.fn(),
       clearDomSnippets: vi.fn(),
     });
+    mockUseSlashCommandController.mockReturnValue({
+      isOpen: false,
+      filteredCommands: [],
+      activeIndex: 0,
+      setActiveIndex: vi.fn(),
+      onSelectByIndex: vi.fn(),
+      onKeyDown: vi.fn(() => false),
+    });
   });
 
   it('routes /btw through side-question flow even while loading', () => {
@@ -183,7 +192,7 @@ describe('SendBox /btw handling', () => {
     const onSend = vi.fn();
 
     const { container } = render(
-      <SendBox value='/btw what file did we use?' onChange={onChange} onSend={onSend} loading />
+      <SendBox value='/btw what file did we use?' onChange={onChange} onSend={onSend} loading enableBtw />
     );
 
     const textarea = container.querySelector('textarea');
@@ -198,7 +207,13 @@ describe('SendBox /btw handling', () => {
 
   it('blocks /btw when attachments are pending', () => {
     const { container } = render(
-      <SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={vi.fn()} hasPendingAttachments />
+      <SendBox
+        value='/btw what file did we use?'
+        onChange={vi.fn()}
+        onSend={vi.fn()}
+        hasPendingAttachments
+        enableBtw
+      />
     );
 
     const textarea = container.querySelector('textarea');
@@ -216,7 +231,7 @@ describe('SendBox /btw handling', () => {
     mockBtwState.question = 'existing side question';
 
     const { container } = render(
-      <SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={vi.fn()} loading />
+      <SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={vi.fn()} loading enableBtw />
     );
 
     const textarea = container.querySelector('textarea');
@@ -230,7 +245,7 @@ describe('SendBox /btw handling', () => {
 
   it('passes parent task running state to the btw overlay', () => {
     const { rerender } = render(
-      <SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={vi.fn()} loading />
+      <SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={vi.fn()} loading enableBtw />
     );
 
     expect(mockBtwOverlay).toHaveBeenCalled();
@@ -238,10 +253,43 @@ describe('SendBox /btw handling', () => {
       parentTaskRunning: true,
     });
 
-    rerender(<SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={vi.fn()} loading={false} />);
+    rerender(
+      <SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={vi.fn()} loading={false} enableBtw />
+    );
 
     expect(mockBtwOverlay.mock.calls.at(-1)?.[0]).toMatchObject({
       parentTaskRunning: false,
     });
+  });
+
+  it('treats /btw as normal text when the feature is disabled', () => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+
+    const { container } = render(
+      <SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={onSend} loading={false} />
+    );
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+
+    fireEvent.keyDown(textarea!, { key: 'Enter' });
+
+    expect(mockAsk).not.toHaveBeenCalled();
+    expect(onSend).toHaveBeenCalledWith('/btw what file did we use?');
+  });
+
+  it('only registers the /btw slash command when enabled', () => {
+    render(<SendBox value='/' onChange={vi.fn()} onSend={vi.fn()} enableBtw />);
+
+    expect(mockUseSlashCommandController).toHaveBeenCalled();
+    const enabledCommands = mockUseSlashCommandController.mock.calls.at(-1)?.[0]?.commands ?? [];
+    expect(enabledCommands.some((command: { name: string }) => command.name === 'btw')).toBe(true);
+
+    mockUseSlashCommandController.mockClear();
+
+    render(<SendBox value='/' onChange={vi.fn()} onSend={vi.fn()} />);
+
+    const disabledCommands = mockUseSlashCommandController.mock.calls.at(-1)?.[0]?.commands ?? [];
+    expect(disabledCommands.some((command: { name: string }) => command.name === 'btw')).toBe(false);
   });
 });

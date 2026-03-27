@@ -8,6 +8,7 @@ import { ClientFactory } from '@/common/api/ClientFactory';
 import type { OpenAIChatCompletionParams } from '@/common/api/OpenAI2AnthropicConverter';
 import type { ConversationSideQuestionResult } from '@/common/adapter/ipcBridge';
 import type { TMessage } from '@/common/chat/chatLib';
+import { isSideQuestionSupported } from '@/common/chat/sideQuestion';
 import type { TChatConversation, TProviderWithModel } from '@/common/config/storage';
 import type {
   AcpBackend,
@@ -187,6 +188,11 @@ export class ConversationSideQuestionService {
       return { status: 'unsupported' };
     }
 
+    const backend = conversation.type === 'acp' ? conversation.extra.backend : undefined;
+    if (!isSideQuestionSupported({ type: conversation.type, backend })) {
+      return { status: 'unsupported' };
+    }
+
     const resolvedProvider = await this.resolveProviderForSideQuestion(conversation);
     if (resolvedProvider) {
       return await this.askWithProvider(conversationId, trimmedQuestion, resolvedProvider);
@@ -276,7 +282,7 @@ export class ConversationSideQuestionService {
               forkSession: true,
               mcpServers: [],
             });
-          } catch (error) {
+          } catch {
             throw new AcpSideQuestionUnsupportedError('ACP forked side questions are not supported for this backend.');
           }
 
