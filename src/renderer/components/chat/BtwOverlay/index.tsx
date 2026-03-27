@@ -61,15 +61,6 @@ const BtwOverlay: React.FC<BtwOverlayProps> = ({
       const maxHeight = Math.max(MIN_OVERLAY_HEIGHT_PX, anchorRect.top - VIEWPORT_MARGIN_PX - OVERLAY_GAP_PX);
       const top = Math.max(VIEWPORT_MARGIN_PX, anchorRect.top - OVERLAY_GAP_PX - maxHeight);
 
-      console.info('[BtwOverlay] Anchoring /btw overlay', {
-        anchorBottom: anchorRect.bottom,
-        anchorTop: anchorRect.top,
-        left,
-        maxHeight,
-        top,
-        width,
-      });
-
       setPosition({
         left,
         maxHeight,
@@ -92,27 +83,17 @@ const BtwOverlay: React.FC<BtwOverlayProps> = ({
       return;
     }
 
-    console.info('[BtwOverlay] Rendering /btw overlay', {
-      isLoading,
-      parentTaskRunning,
-      questionLength: question.length,
-    });
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (!DISMISS_KEYS.has(event.key)) {
         return;
       }
       event.preventDefault();
-      console.info('[BtwOverlay] Dismissing /btw overlay from keyboard', {
-        key: event.key,
-      });
       onDismiss();
     };
 
     // Delay keyboard dismissal binding so the Enter press used to submit `/btw`
     // cannot immediately close the overlay before the response is shown.
     const bindTimer = window.setTimeout(() => {
-      console.info('[BtwOverlay] Keyboard dismissal enabled');
       window.addEventListener('keydown', onKeyDown);
     }, DISMISS_BIND_DELAY_MS);
 

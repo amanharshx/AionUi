@@ -23,7 +23,6 @@ export function useBtwCommand(conversationId?: string) {
   const [state, setState] = useState<BtwCommandState>(INITIAL_STATE);
 
   const dismiss = useCallback(() => {
-    console.info('[useBtwCommand] Dismissing /btw state');
     requestIdRef.current += 1;
     setState(INITIAL_STATE);
   }, []);
@@ -31,10 +30,6 @@ export function useBtwCommand(conversationId?: string) {
   const ask = useCallback(
     async (question: string) => {
       const requestId = ++requestIdRef.current;
-      console.info('[useBtwCommand] Starting /btw request', {
-        conversationId,
-        questionLength: question.length,
-      });
       Message.info(t('conversation.sideQuestion.started'));
       setState({
         answer: '',
@@ -44,7 +39,6 @@ export function useBtwCommand(conversationId?: string) {
       });
 
       if (!conversationId) {
-        console.info('[useBtwCommand] /btw unsupported: missing conversation id');
         Message.warning(t('conversation.sideQuestion.unsupported'));
         setState({
           answer: t('conversation.sideQuestion.unsupported'),
@@ -62,25 +56,10 @@ export function useBtwCommand(conversationId?: string) {
         });
 
         if (requestId !== requestIdRef.current) {
-          console.info('[useBtwCommand] Ignoring stale /btw response', {
-            conversationId,
-            requestId,
-            activeRequestId: requestIdRef.current,
-          });
           return;
         }
 
-        console.info('[useBtwCommand] Received /btw IPC response', {
-          conversationId,
-          success: response.success,
-          status: response.data?.status,
-        });
-
         if (!response.success || !response.data) {
-          console.error('[useBtwCommand] /btw failed', {
-            conversationId,
-            error: response.msg || 'unknown error',
-          });
           Message.error(t('conversation.sideQuestion.error'));
           setState({
             answer: t('conversation.sideQuestion.error'),
@@ -93,10 +72,6 @@ export function useBtwCommand(conversationId?: string) {
 
         switch (response.data.status) {
           case 'ok':
-            console.info('[useBtwCommand] /btw answered', {
-              conversationId,
-              answerLength: response.data.answer.length,
-            });
             Message.success(t('conversation.sideQuestion.answered'));
             setState({
               answer: response.data.answer,
@@ -106,9 +81,6 @@ export function useBtwCommand(conversationId?: string) {
             });
             return;
           case 'unsupported':
-            console.info('[useBtwCommand] /btw unsupported', {
-              conversationId,
-            });
             Message.warning(t('conversation.sideQuestion.unsupported'));
             setState({
               answer: t('conversation.sideQuestion.unsupported'),
@@ -118,10 +90,6 @@ export function useBtwCommand(conversationId?: string) {
             });
             return;
           case 'invalid':
-            console.info('[useBtwCommand] /btw invalid', {
-              conversationId,
-              reason: response.data.reason,
-            });
             Message.warning(t('conversation.sideQuestion.emptyQuestion'));
             setState({
               answer: t('conversation.sideQuestion.emptyQuestion'),
@@ -135,7 +103,6 @@ export function useBtwCommand(conversationId?: string) {
         if (requestId !== requestIdRef.current) {
           return;
         }
-        console.error('[useBtwCommand] Failed to ask side question:', error);
         Message.error(t('conversation.sideQuestion.error'));
         setState({
           answer: t('conversation.sideQuestion.error'),
