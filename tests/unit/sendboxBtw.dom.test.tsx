@@ -207,13 +207,7 @@ describe('SendBox /btw handling', () => {
 
   it('blocks /btw when attachments are pending', () => {
     const { container } = render(
-      <SendBox
-        value='/btw what file did we use?'
-        onChange={vi.fn()}
-        onSend={vi.fn()}
-        hasPendingAttachments
-        enableBtw
-      />
+      <SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={vi.fn()} hasPendingAttachments enableBtw />
     );
 
     const textarea = container.querySelector('textarea');

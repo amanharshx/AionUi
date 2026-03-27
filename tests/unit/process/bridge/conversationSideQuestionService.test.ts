@@ -255,7 +255,7 @@ describe('ConversationSideQuestionService', () => {
     vi.useRealTimers();
   });
 
-  it('rejects when the ACP side question triggers a permission request', async () => {
+  it('returns toolsRequired when permission request is triggered without prior text', async () => {
     const service = new ConversationSideQuestionService(makeService(makeClaudeConversation()));
 
     mockAcpSendPrompt.mockImplementationOnce(async (connection: MockAcpConnectionInstance) => {
@@ -263,13 +263,13 @@ describe('ConversationSideQuestionService', () => {
       return {};
     });
 
-    await expect(service.ask('conv-1', 'what file did we use?')).rejects.toThrow(
-      'ACP /btw requires permission and cannot continue.'
-    );
+    await expect(service.ask('conv-1', 'what file did we use?')).resolves.toEqual({
+      status: 'toolsRequired',
+    });
     expect(mockAcpCancelPrompt).toHaveBeenCalled();
   });
 
-  it('rejects when the ACP side question attempts a tool call', async () => {
+  it('returns toolsRequired when tool call is attempted without prior text', async () => {
     const service = new ConversationSideQuestionService(makeService(makeClaudeConversation()));
 
     mockAcpSendPrompt.mockImplementationOnce(async (connection: MockAcpConnectionInstance) => {
@@ -277,7 +277,25 @@ describe('ConversationSideQuestionService', () => {
       return {};
     });
 
-    await expect(service.ask('conv-1', 'what file did we use?')).rejects.toThrow('ACP /btw attempted to use tools.');
+    await expect(service.ask('conv-1', 'what file did we use?')).resolves.toEqual({
+      status: 'toolsRequired',
+    });
+    expect(mockAcpCancelPrompt).toHaveBeenCalled();
+  });
+
+  it('returns ok with partial text when tool call is attempted after text', async () => {
+    const service = new ConversationSideQuestionService(makeService(makeClaudeConversation()));
+
+    mockAcpSendPrompt.mockImplementationOnce(async (connection: MockAcpConnectionInstance) => {
+      connection.onSessionUpdate(createTextChunkUpdate('Here is what I found'));
+      connection.onSessionUpdate(createToolCallUpdate());
+      return {};
+    });
+
+    await expect(service.ask('conv-1', 'what file did we use?')).resolves.toEqual({
+      status: 'ok',
+      answer: 'Here is what I found',
+    });
     expect(mockAcpCancelPrompt).toHaveBeenCalled();
   });
 });
