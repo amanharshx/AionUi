@@ -49,13 +49,16 @@ export class ConversationSideQuestionService {
     const resolvedAcpContext = await this.resolveAcpSideQuestionContext(conversation);
     if (resolvedAcpContext) {
       try {
-        const answer = await this.askWithAcpFork(conversationId, trimmedQuestion, resolvedAcpContext);
-        if (!answer) {
+        const result = await this.askWithAcpFork(conversationId, trimmedQuestion, resolvedAcpContext);
+        if (result.toolsAttempted && !result.answer) {
+          return { status: 'toolsRequired' };
+        }
+        if (!result.answer) {
           return { status: 'noAnswer' };
         }
         return {
           status: 'ok',
-          answer,
+          answer: result.answer,
         };
       } catch (caughtError) {
         if (caughtError instanceof AcpSideQuestionUnsupportedError) {
@@ -68,7 +71,11 @@ export class ConversationSideQuestionService {
     return { status: 'unsupported' };
   }
 
-  private async askWithAcpFork(conversationId: string, question: string, context: ResolvedAcpContext): Promise<string> {
+  private async askWithAcpFork(
+    conversationId: string,
+    question: string,
+    context: ResolvedAcpContext
+  ): Promise<{ answer: string; toolsAttempted: boolean }> {
     const connection = new AcpConnection();
     connection.setPromptTimeout(ACP_SIDE_QUESTION_PROMPT_TIMEOUT_SECONDS);
 
@@ -100,8 +107,7 @@ export class ConversationSideQuestionService {
         ACP_SIDE_QUESTION_TIMEOUT_MS
       );
 
-      const answer = completion.getAnswer();
-      return answer;
+      return { answer: completion.getAnswer(), toolsAttempted: completion.toolsAttempted() };
     } finally {
       completion.dispose();
       await connection.disconnect().catch((error: unknown) => {
@@ -163,9 +169,11 @@ export class ConversationSideQuestionService {
     dispose: () => void;
     getAnswer: () => string;
     promise: Promise<void>;
+    toolsAttempted: () => boolean;
   } {
     let settled = false;
     let answer = '';
+    let toolsWereAttempted = false;
 
     const fail = (error: Error) => {
       if (settled) {
@@ -201,13 +209,14 @@ export class ConversationSideQuestionService {
         return;
       }
       if (data.update.sessionUpdate === 'tool_call' || data.update.sessionUpdate === 'tool_call_update') {
-        console.warn('[ConversationSideQuestionService] ACP /btw rejected tool activity', {
+        console.warn('[ConversationSideQuestionService] ACP /btw cancelled due to tool activity', {
           backend,
           conversationId,
           update: data.update.sessionUpdate,
         });
+        toolsWereAttempted = true;
         connection.cancelPrompt();
-        fail(new AcpSideQuestionFailedError('ACP /btw attempted to use tools.'));
+        succeed();
       }
     };
 
@@ -217,8 +226,9 @@ export class ConversationSideQuestionService {
         conversationId,
         tool: data.toolCall.title,
       });
+      toolsWereAttempted = true;
       connection.cancelPrompt();
-      fail(new AcpSideQuestionFailedError('ACP /btw requires permission and cannot continue.'));
+      succeed();
       return {
         optionId: data.options.find((option) => option.kind.startsWith('reject'))?.optionId || 'reject_once',
       };
@@ -247,6 +257,7 @@ export class ConversationSideQuestionService {
       },
       getAnswer: () => answer.trim(),
       promise,
+      toolsAttempted: () => toolsWereAttempted,
     };
   }
 

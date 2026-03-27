@@ -113,6 +113,15 @@ export function useBtwCommand(conversationId?: string, enabled = true) {
               question,
             });
             return;
+          case 'toolsRequired':
+            Message.info(t('conversation.sideQuestion.toolsRequired'));
+            setState({
+              answer: t('conversation.sideQuestion.toolsRequired'),
+              isLoading: false,
+              isOpen: true,
+              question,
+            });
+            return;
           case 'invalid':
             Message.warning(t('conversation.sideQuestion.emptyQuestion'));
             setState({

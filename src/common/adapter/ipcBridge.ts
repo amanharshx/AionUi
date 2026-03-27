@@ -914,6 +914,9 @@ export type ConversationSideQuestionResult =
   | {
       status: 'invalid';
       reason: 'emptyQuestion';
+    }
+  | {
+      status: 'toolsRequired';
     };
 
 interface IBridgeResponse<D = {}> {

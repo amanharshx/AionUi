@@ -42,27 +42,39 @@ const BtwOverlay: React.FC<BtwOverlayProps> = ({
   });
 
   useEffect(() => {
-    if (!isOpen || !anchorEl) {
+    if (!isOpen) {
       return;
     }
 
     const updatePosition = () => {
-      const anchorRect = anchorEl.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
+      const header = document.querySelector('.chat-layout-header');
+      const headerBottom = header ? header.getBoundingClientRect().bottom : 60;
+      const anchorRect = anchorEl?.getBoundingClientRect();
+
       const width = Math.max(
         MIN_OVERLAY_WIDTH_PX,
-        Math.min(MAX_OVERLAY_WIDTH_PX, anchorRect.width, viewportWidth - VIEWPORT_MARGIN_PX * 2)
+        Math.min(
+          MAX_OVERLAY_WIDTH_PX,
+          anchorRect ? anchorRect.width : viewportWidth - VIEWPORT_MARGIN_PX * 2,
+          viewportWidth - VIEWPORT_MARGIN_PX * 2
+        )
       );
-      const left = Math.min(Math.max(VIEWPORT_MARGIN_PX, anchorRect.left), viewportWidth - width - VIEWPORT_MARGIN_PX);
-      const maxHeight = Math.max(MIN_OVERLAY_HEIGHT_PX, anchorRect.top - VIEWPORT_MARGIN_PX - OVERLAY_GAP_PX);
-      const top = Math.max(VIEWPORT_MARGIN_PX, anchorRect.top - OVERLAY_GAP_PX - maxHeight);
 
-      setPosition({
-        left,
-        maxHeight,
-        top,
-        width,
-      });
+      let left: number;
+      if (header) {
+        const headerRect = header.getBoundingClientRect();
+        left = headerRect.left + Math.round((headerRect.width - width) / 2);
+      } else {
+        left = Math.round((viewportWidth - width) / 2);
+      }
+      left = Math.max(VIEWPORT_MARGIN_PX, Math.min(left, viewportWidth - width - VIEWPORT_MARGIN_PX));
+
+      const top = headerBottom + OVERLAY_GAP_PX;
+      const bottomBound = anchorRect ? anchorRect.top - OVERLAY_GAP_PX : window.innerHeight - VIEWPORT_MARGIN_PX;
+      const maxHeight = Math.max(MIN_OVERLAY_HEIGHT_PX, bottomBound - top);
+
+      setPosition({ left, maxHeight, top, width });
     };
 
     updatePosition();
