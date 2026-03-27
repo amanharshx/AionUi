@@ -5,6 +5,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { IConversationService } from '@/process/services/IConversationService';
+import type { IWorkerTaskManager } from '@/process/task/IWorkerTaskManager';
 
 type Provider = (payload?: unknown) => Promise<unknown>;
 
@@ -39,7 +41,7 @@ const mockWorkerTaskManager = {
 
 const registerMocks = () => {
   vi.doMock('@/agent/gemini', () => ({
-    GeminiAgent: class {},
+    GeminiAgent: vi.fn(),
     GeminiApprovalStore: { getInstance: vi.fn(() => ({})) },
   }));
 
@@ -114,11 +116,8 @@ const registerMocks = () => {
 const getProvider = async (key: string): Promise<Provider> => {
   const mod = await import('@process/bridge/conversationBridge');
   mod.initConversationBridge(
-    mockConversationService as any,
-    mockWorkerTaskManager as any,
-    {
-      getMessages: vi.fn(async () => ({ data: [], total: 0, hasMore: false })),
-    } as any
+    mockConversationService as unknown as IConversationService,
+    mockWorkerTaskManager as unknown as IWorkerTaskManager
   );
 
   const provider = handlers[key];

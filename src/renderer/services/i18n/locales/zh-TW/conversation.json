@@ -188,6 +188,7 @@
     "description": "針對目前對話快速提出一個小問題",
     "started": "正在發起順便提問...",
     "answered": "順便提問已返回結果。",
+    "noAnswer": "目前的會話內容裡沒有明確答案。",
     "loading": "思考中...",
     "parentTaskRunning": "主任務仍在背景持續執行。",
     "dismissHint": "按 Escape、Enter 或 Space 關閉",

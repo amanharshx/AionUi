@@ -188,6 +188,7 @@
     "description": "Ask a quick question about the current conversation",
     "started": "Starting side question...",
     "answered": "Side question answered.",
+    "noAnswer": "The side question did not have a clear answer in the current conversation.",
     "loading": "Thinking...",
     "parentTaskRunning": "Main task still running in the background.",
     "dismissHint": "Press Escape, Enter, or Space to dismiss",

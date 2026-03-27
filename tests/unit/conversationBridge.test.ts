@@ -3,10 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: vi.fn(() => '/tmp') } }));
 
 // Capture provider handlers so tests can invoke them directly
-const handlers: Record<string, (...args: any[]) => any> = {};
+type ProviderHandler = (...args: unknown[]) => unknown;
+
+const handlers: Record<string, ProviderHandler> = {};
 function makeChannel(name: string) {
   return {
-    provider: vi.fn((fn: (...args: any[]) => any) => {
+    provider: vi.fn((fn: ProviderHandler) => {
       handlers[name] = fn;
     }),
     emit: vi.fn(),
@@ -77,7 +79,6 @@ vi.mock('../../src/process/task/agentUtils', () => ({
 
 import { initConversationBridge } from '../../src/process/bridge/conversationBridge';
 import type { IConversationService } from '../../src/process/services/IConversationService';
-import type { IConversationRepository } from '../../src/process/services/database/IConversationRepository';
 import type { IWorkerTaskManager } from '../../src/process/task/IWorkerTaskManager';
 import type { TChatConversation } from '../../src/common/config/storage';
 
@@ -107,21 +108,6 @@ function makeTaskManager(overrides?: Partial<IWorkerTaskManager>): IWorkerTaskMa
   };
 }
 
-function makeRepo(overrides?: Partial<IConversationRepository>): IConversationRepository {
-  return {
-    getConversation: vi.fn(async () => undefined),
-    createConversation: vi.fn(async () => {}),
-    updateConversation: vi.fn(async () => {}),
-    deleteConversation: vi.fn(async () => {}),
-    getMessages: vi.fn(async () => ({ data: [], total: 0, hasMore: false })),
-    insertMessage: vi.fn(async () => {}),
-    getUserConversations: vi.fn(async () => ({ data: [], total: 0, hasMore: false })),
-    listAllConversations: vi.fn(async () => []),
-    searchMessages: vi.fn(async () => ({ data: [], total: 0, hasMore: false })),
-    ...overrides,
-  };
-}
-
 function makeConversation(id: string, workspace = '/ws'): TChatConversation {
   return { id, type: 'gemini', name: 'test', extra: { workspace } } as unknown as TChatConversation;
 }
@@ -129,15 +115,13 @@ function makeConversation(id: string, workspace = '/ws'): TChatConversation {
 describe('conversationBridge', () => {
   let service: IConversationService;
   let taskManager: IWorkerTaskManager;
-  let repo: IConversationRepository;
 
   beforeEach(() => {
     vi.clearAllMocks();
     // Re-register providers by re-initializing the bridge
     service = makeService();
     taskManager = makeTaskManager();
-    repo = makeRepo();
-    initConversationBridge(service, taskManager, repo);
+    initConversationBridge(service, taskManager);
   });
 
   describe('getAssociateConversation — listAllConversations path', () => {
@@ -200,7 +184,7 @@ describe('conversationBridge', () => {
       const rejectingTaskManager = makeTaskManager({
         getOrBuildTask: vi.fn().mockRejectedValue(new Error('Conversation not found: new-id')),
       });
-      initConversationBridge(service, rejectingTaskManager, repo);
+      initConversationBridge(service, rejectingTaskManager);
 
       // Should complete without throwing / unhandled rejection
       const result = await handlers['createWithConversation']({
@@ -276,8 +260,10 @@ describe('conversationBridge', () => {
 
     it('calls initAgent() when task type is "acp"', async () => {
       const initAgent = vi.fn();
-      const acpTask = { type: 'acp', initAgent };
-      vi.mocked(taskManager.getOrBuildTask).mockResolvedValue(acpTask as any);
+      const acpTask = { type: 'acp', initAgent } as unknown as Awaited<
+        ReturnType<IWorkerTaskManager['getOrBuildTask']>
+      >;
+      vi.mocked(taskManager.getOrBuildTask).mockResolvedValue(acpTask);
 
       const handler = handlers['warmup'];
       await handler({ conversation_id: 'acp-id' });
@@ -288,8 +274,11 @@ describe('conversationBridge', () => {
 
     it('does not call initAgent when task type is not "acp"', async () => {
       const initAgent = vi.fn();
-      const geminiTask = { type: 'gemini', initAgent };
-      vi.mocked(taskManager.getOrBuildTask).mockResolvedValue(geminiTask as any);
+      const geminiTask = {
+        type: 'gemini',
+        initAgent,
+      } as unknown as Awaited<ReturnType<IWorkerTaskManager['getOrBuildTask']>>;
+      vi.mocked(taskManager.getOrBuildTask).mockResolvedValue(geminiTask);
 
       const handler = handlers['warmup'];
       await handler({ conversation_id: 'gemini-id' });

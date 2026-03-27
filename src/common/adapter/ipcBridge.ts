@@ -880,6 +880,9 @@ export type ConversationSideQuestionResult =
       answer: string;
     }
   | {
+      status: 'noAnswer';
+    }
+  | {
       status: 'unsupported';
     }
   | {

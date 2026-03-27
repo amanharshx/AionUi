@@ -188,6 +188,7 @@
     "description": "针对当前对话快速提一个小问题",
     "started": "正在发起顺便提问...",
     "answered": "顺便提问已返回结果。",
+    "noAnswer": "当前会话里没有明确的答案。",
     "loading": "思考中...",
     "parentTaskRunning": "主任务仍在后台继续运行。",
     "dismissHint": "按 Escape、Enter 或 Space 关闭",

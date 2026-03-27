@@ -9,7 +9,6 @@ import { GeminiAgent, GeminiApprovalStore } from '@process/agent/gemini';
 import type { TChatConversation } from '@/common/config/storage';
 import type { IAgentManager } from '@process/task/IAgentManager';
 import type { IConversationService } from '@process/services/IConversationService';
-import type { IConversationRepository } from '@process/services/database/IConversationRepository';
 import type { IWorkerTaskManager } from '@process/task/IWorkerTaskManager';
 import { ipcBridge } from '@/common';
 import { getSkillsDir, getBuiltinSkillsCopyDir, getSystemDir, ProcessChat } from '@process/utils/initStorage';
@@ -33,10 +32,9 @@ const refreshTrayMenuSafely = async (): Promise<void> => {
 
 export function initConversationBridge(
   conversationService: IConversationService,
-  workerTaskManager: IWorkerTaskManager,
-  conversationRepo: IConversationRepository
+  workerTaskManager: IWorkerTaskManager
 ): void {
-  const sideQuestionService = new ConversationSideQuestionService(conversationService, conversationRepo);
+  const sideQuestionService = new ConversationSideQuestionService(conversationService);
 
   const emitConversationListChanged = (
     conversation: Pick<TChatConversation, 'id' | 'source'>,
@@ -257,7 +255,7 @@ export function initConversationBridge(
         if (modelChanged) {
           try {
             workerTaskManager.kill(id);
-          } catch (killErr) {
+          } catch {
             // ignore kill error, will lazily rebuild later
           }
         }
