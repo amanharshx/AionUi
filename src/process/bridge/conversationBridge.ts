@@ -269,6 +269,22 @@ export function initConversationBridge(
     }
   );
 
+  // Pre-warm conversation bootstrap: trigger getOrBuildTask early so that
+  // the worker is ready when the user sends their first message.
+  // For ACP agents, also trigger initAgent() to start the CLI subprocess
+  // (~7s). Stream events are suppressed during bootstrap (via `bootstrapping`
+  // flag) to avoid triggering the sidebar loading spinner prematurely.
+  ipcBridge.conversation.warmup.provider(async ({ conversation_id }) => {
+    try {
+      const task = await workerTaskManager.getOrBuildTask(conversation_id);
+      if (task && task.type === 'acp') {
+        await (task as unknown as AcpAgentManager).initAgent();
+      }
+    } catch {
+      // Ignore errors — warmup is best-effort
+    }
+  });
+
   ipcBridge.conversation.reset.provider(({ id }) => {
     if (id) {
       workerTaskManager.kill(id);
@@ -317,8 +333,8 @@ export function initConversationBridge(
   })();
 
   ipcBridge.conversation.getWorkspace.provider(async ({ workspace, search, path }) => {
-    const fileService = GeminiAgent.buildFileServer(workspace);
     try {
+      const fileService = GeminiAgent.buildFileServer(workspace);
       return await readDirectoryRecursive(path, {
         root: workspace,
         fileService,
@@ -395,7 +411,15 @@ export function initConversationBridge(
     }
 
     // Copy files to workspace (unified for all agents)
-    const workspaceFiles = await copyFilesToDirectory(task.workspace, files, false, getSystemDir().cacheDir);
+    // Wrap in try-catch to prevent unhandled rejection when workspace directory is missing
+    // (bridge library does not attach .catch to provider promises)
+    let workspaceFiles: string[];
+    try {
+      workspaceFiles = await copyFilesToDirectory(task.workspace, files, false, getSystemDir().cacheDir);
+    } catch (error) {
+      console.error('[conversationBridge] sendMessage: failed to copy files to workspace:', error);
+      workspaceFiles = [];
+    }
 
     // Precompute agent content with optional skill injection.
     // OpenClaw uses full-content mode: inject full skill text rather than index paths,

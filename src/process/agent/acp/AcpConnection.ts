@@ -52,6 +52,9 @@ interface PendingRequest<T = unknown> {
   isPaused: boolean;
   startTime: number;
   timeoutDuration: number;
+  // Wall-clock timestamp of when this request was first created; never updated.
+  // Used by the keepalive to cap how long it will keep resetting the timeout.
+  promptOriginTime: number;
 }
 
 export class AcpConnection {
@@ -68,6 +71,9 @@ export class AcpConnection {
   private configOptions: AcpSessionConfigOption[] | null = null;
   private models: AcpSessionModels | null = null;
 
+  // Configurable prompt timeout in milliseconds (default: 300000 = 5 minutes)
+  private promptTimeoutMs: number = 300000;
+
   // Performance tracking: timestamp when last prompt was sent
   private lastPromptSentAt: number = 0;
   private firstChunkReceived: boolean = true;
@@ -80,6 +86,15 @@ export class AcpConnection {
   public onPromptUsage: (usage: AcpPromptResponseUsage) => void = () => {}; // Handler for PromptResponse.usage (per-turn token data)
   public onFileOperation: (operation: { method: string; path: string; content?: string; sessionId: string }) => void =
     () => {};
+
+  /**
+   * Set the prompt timeout duration in seconds.
+   * @param seconds - Timeout in seconds (minimum 30, default 300)
+   */
+  setPromptTimeout(seconds: number): void {
+    this.promptTimeoutMs = Math.max(30, seconds) * 1000;
+  }
+
   // Disconnect callback - called when child process exits unexpectedly during runtime
   public onDisconnect: (error: { code: number | null; signal: NodeJS.Signals | null }) => void = () => {};
 
@@ -88,6 +103,13 @@ export class AcpConnection {
 
   // Track if child process was spawned with detached: true (needs process group kill)
   private isDetached = false;
+
+  // Periodic keepalive: while a session/prompt is pending, check that the child
+  // process is still alive and reset the timeout timer accordingly.  This prevents
+  // false timeouts when an ACP agent is executing a long-running tool that produces
+  // no streaming output (e.g. a multi-minute build or test suite).
+  private promptKeepaliveInterval: NodeJS.Timeout | null = null;
+  private static readonly KEEPALIVE_INTERVAL_MS = 60_000; // check every 60 s
 
   /**
    * Kill the current child process (if any) and clear process-related state.
@@ -423,6 +445,7 @@ export class AcpConnection {
    * Similar to Codex's handleProcessExit implementation
    */
   private handleProcessExit(code: number | null, signal: NodeJS.Signals | null): void {
+    this.stopPromptKeepalive();
     // 1. Reject all pending requests with clear error message
     for (const [_id, request] of this.pendingRequests) {
       if (request.timeoutId) {
@@ -459,24 +482,15 @@ export class AcpConnection {
     return new Promise((resolve, reject) => {
       // Use longer timeout for session/prompt requests as they involve LLM processing
       // Complex tasks like document processing may need significantly more time
-      const timeoutDuration = method === 'session/prompt' ? 300000 : 60000; // 5 minutes for prompts, 1 minute for others
+      const timeoutDuration = method === 'session/prompt' ? this.promptTimeoutMs : 60000;
       const startTime = Date.now();
 
-      const createTimeoutHandler = () => {
-        return setTimeout(() => {
-          const request = this.pendingRequests.get(id);
-          if (request && !request.isPaused) {
-            this.pendingRequests.delete(id);
-            const timeoutMsg =
-              method === 'session/prompt'
-                ? `LLM request timed out after ${timeoutDuration / 1000} seconds`
-                : `Request ${method} timed out after ${timeoutDuration / 1000} seconds`;
-            reject(new Error(timeoutMsg));
-          }
-        }, timeoutDuration);
-      };
-
-      const initialTimeout = createTimeoutHandler();
+      const initialTimeout = setTimeout(() => {
+        const request = this.pendingRequests.get(id);
+        if (request && !request.isPaused) {
+          this.handlePromptTimeout(id, request);
+        }
+      }, timeoutDuration);
 
       const pendingRequest: PendingRequest<T> = {
         resolve: (value: T) => {
@@ -496,12 +510,31 @@ export class AcpConnection {
         isPaused: false,
         startTime,
         timeoutDuration,
+        promptOriginTime: startTime,
       };
 
       this.pendingRequests.set(id, pendingRequest);
 
       this.sendMessage(message);
     });
+  }
+
+  /**
+   * Handle request timeout: for session/prompt, send session/cancel to stop
+   * LLM generation without killing the process; for other methods, just reject.
+   */
+  private handlePromptTimeout(requestId: number, request: PendingRequest<unknown>): void {
+    this.pendingRequests.delete(requestId);
+    if (request.method === 'session/prompt') {
+      this.cancelPrompt();
+    }
+    request.reject(
+      new Error(
+        request.method === 'session/prompt'
+          ? `LLM request timed out after ${request.timeoutDuration / 1000} seconds`
+          : `Request ${request.method} timed out after ${request.timeoutDuration / 1000} seconds`
+      )
+    );
   }
 
   // 暂停指定请求的超时计时器
@@ -524,15 +557,13 @@ export class AcpConnection {
       if (remainingTime > 0) {
         request.timeoutId = setTimeout(() => {
           if (this.pendingRequests.has(requestId) && !request.isPaused) {
-            this.pendingRequests.delete(requestId);
-            request.reject(new Error(`Request ${request.method} timed out`));
+            this.handlePromptTimeout(requestId, request);
           }
         }, remainingTime);
         request.isPaused = false;
       } else {
         // 时间已超过，立即触发超时
-        this.pendingRequests.delete(requestId);
-        request.reject(new Error(`Request ${request.method} timed out`));
+        this.handlePromptTimeout(requestId, request);
       }
     }
   }
@@ -570,11 +601,54 @@ export class AcpConnection {
         request.startTime = Date.now();
         request.timeoutId = setTimeout(() => {
           if (this.pendingRequests.has(id) && !request.isPaused) {
-            this.pendingRequests.delete(id);
-            request.reject(new Error(`LLM request timed out after ${request.timeoutDuration / 1000} seconds`));
+            this.handlePromptTimeout(id, request);
           }
         }, request.timeoutDuration);
       }
+    }
+  }
+
+  /**
+   * Returns true only if the child process is confirmed to still be running.
+   * Checks exitCode and signalCode in addition to killed, because killed is
+   * only set when the process is terminated via Node's .kill() — a naturally
+   * crashing child leaves killed=false until the exit event is processed.
+   * exitCode/signalCode are set by the runtime as soon as the process exits,
+   * so they reliably detect a dead child even before the exit event fires.
+   */
+  private isChildAlive(): boolean {
+    return this.child !== null && !this.child.killed && this.child.exitCode === null && this.child.signalCode === null;
+  }
+
+  /**
+   * Start a periodic keepalive that resets prompt timeout timers as long as
+   * the child process is still alive.  This complements the streaming-based
+   * reset in resetSessionPromptTimeouts(): when the agent is executing a
+   * silent tool (no session.update emitted), the keepalive prevents a false
+   * timeout while the process-exit handler covers the case where the child
+   * actually crashes.
+   */
+  private startPromptKeepalive(): void {
+    this.stopPromptKeepalive();
+    this.promptKeepaliveInterval = setInterval(() => {
+      if (!this.isChildAlive()) return;
+      // Only reset timeouts for requests that are still within their original
+      // wall-clock budget (promptOriginTime + timeoutDuration). This prevents
+      // a hung process from being kept alive indefinitely by the keepalive.
+      const now = Date.now();
+      const hasEligibleRequest = [...this.pendingRequests.values()].some(
+        (r) => r.method === 'session/prompt' && now - r.promptOriginTime < r.timeoutDuration
+      );
+      if (hasEligibleRequest) {
+        this.resetSessionPromptTimeouts();
+      }
+    }, AcpConnection.KEEPALIVE_INTERVAL_MS);
+  }
+
+  private stopPromptKeepalive(): void {
+    if (this.promptKeepaliveInterval) {
+      clearInterval(this.promptKeepaliveInterval);
+      this.promptKeepaliveInterval = null;
     }
   }
 
@@ -910,10 +984,42 @@ export class AcpConnection {
     this.firstChunkReceived = false;
     if (ACP_PERF_LOG) console.log(`[ACP-PERF] send: prompt sent to ${this.backend}`);
 
-    return await this.sendRequest('session/prompt', {
-      sessionId: this.sessionId,
-      prompt: [{ type: 'text', text: prompt }],
+    this.startPromptKeepalive();
+    try {
+      return await this.sendRequest('session/prompt', {
+        sessionId: this.sessionId,
+        prompt: [{ type: 'text', text: prompt }],
+      });
+    } finally {
+      this.stopPromptKeepalive();
+    }
+  }
+
+  /**
+   * Cancel the current prompt turn by sending a session/cancel notification.
+   * This tells the backend to stop LLM generation and tool calls ASAP.
+   * Also clears all pending session/prompt requests locally.
+   */
+  cancelPrompt(): void {
+    if (!this.sessionId) return;
+
+    // Send ACP session/cancel notification (no response expected)
+    this.sendMessage({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'session/cancel',
+      params: { sessionId: this.sessionId },
     });
+
+    // Clear all pending session/prompt requests
+    for (const [id, request] of this.pendingRequests) {
+      if (request.method === 'session/prompt') {
+        if (request.timeoutId) {
+          clearTimeout(request.timeoutId);
+        }
+        this.pendingRequests.delete(id);
+        request.resolve(null);
+      }
+    }
   }
 
   async setSessionMode(modeId: string): Promise<AcpResponse> {
@@ -990,6 +1096,7 @@ export class AcpConnection {
   }
 
   async disconnect(): Promise<void> {
+    this.stopPromptKeepalive();
     await this.terminateChild();
 
     // Reset session-level state

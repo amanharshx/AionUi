@@ -11,27 +11,35 @@ import { uuid } from '@/common/utils';
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
-import { getSkillsDir, getBuiltinSkillsCopyDir, getSystemDir } from './initStorage';
+import { getSkillsDir, getBuiltinSkillsCopyDir, getAutoSkillsDir, getSystemDir } from './initStorage';
 import { computeOpenClawIdentityHash } from './openclawUtils';
 
 /**
- * Agent 类型到原生 skills 目录的映射（仅列出有专属目录的 CLI）
- * Mapping from agent type to native skills directory (only agents with dedicated dirs)
+ * Agent 类型/backend 到原生 skills 目录的映射
+ * Mapping from agent type/backend to native skills directory
  *
- * 每个 agent 只 symlink 到一个目录，避免工作空间出现多余的目录
- * Each agent symlinks to exactly one directory to keep workspace clean
+ * 只有在此映射中的 CLI 才支持原生 skill 发现（CLI 自动扫描目录中的 SKILL.md）
+ * Only CLIs listed here support native skill discovery (CLI auto-scans directory for SKILL.md)
  *
- * Gemini CLI:    .gemini/skills/  (native SkillManager discovery)
- * Claude / CBud: .claude/skills/  (native skill discovery)
- * Others:        .agents/skills/  (generic fallback via DEFAULT_SKILLS_DIRS)
+ * 不在此映射中的 backend 将 fallback 到首条消息注入（prompt injection）方案
+ * Backends NOT in this map will fallback to first-message injection (prompt injection)
  */
 const AGENT_SKILLS_DIRS: Record<string, string[]> = {
+  // Verified native skill discovery support:
   gemini: ['.gemini/skills'],
   claude: ['.claude/skills'],
-  codebuddy: ['.claude/skills'],
+  codebuddy: ['.codebuddy/skills'],
+  codex: ['.codex/skills'],
+  qwen: ['.qwen/skills'],
+  iflow: ['.iflow/skills'],
+  goose: ['.goose/skills'],
+  droid: ['.factory/skills'],
+  kimi: ['.kimi/skills'],
+  vibe: ['.vibe/skills'],
+  cursor: ['.cursor/skills'],
+  // NOT supported (fallback to prompt injection):
+  // opencode, auggie, copilot, nanobot, qoder
 };
-
-const DEFAULT_SKILLS_DIRS = ['.agents/skills'];
 
 /**
  * 为 assistant 设置原生 workspace 结构（skill symlinks）
@@ -46,6 +54,14 @@ const DEFAULT_SKILLS_DIRS = ['.agents/skills'];
  * 注意：Rules/人格设定通过 system prompt 注入，不写 context file
  * Note: Rules/personality are injected via system prompt, NOT written to context files
  */
+/**
+ * Check if a given agent type/backend supports native skill discovery.
+ * When false, callers should fallback to prompt injection for skills.
+ */
+export function hasNativeSkillSupport(agentTypeOrBackend: string | undefined): boolean {
+  return !!agentTypeOrBackend && agentTypeOrBackend in AGENT_SKILLS_DIRS;
+}
+
 export async function setupAssistantWorkspace(
   workspace: string,
   options: {
@@ -54,20 +70,49 @@ export async function setupAssistantWorkspace(
     enabledSkills?: string[];
   }
 ): Promise<void> {
-  if (!options.enabledSkills || options.enabledSkills.length === 0) return;
-
   // Determine skills directories based on agent type or backend
   const key = options.backend || options.agentType || '';
-  const skillsDirs = AGENT_SKILLS_DIRS[key] || DEFAULT_SKILLS_DIRS;
+  const skillsDirs = AGENT_SKILLS_DIRS[key];
+
+  // If no native skill directory is known for this CLI, skip symlink setup.
+  // The caller should use prompt injection as fallback.
+  if (!skillsDirs) return;
+
+  const autoSkillsDir = getAutoSkillsDir();
   const userSkillsDir = getSkillsDir();
 
   for (const skillsRelDir of skillsDirs) {
     const targetSkillsDir = path.join(workspace, skillsRelDir);
     await fs.mkdir(targetSkillsDir, { recursive: true });
 
-    for (const skillName of options.enabledSkills) {
-      // Skip builtin skills (auto-injected via SkillManager / virtual extension)
-      if (skillName === 'cron') continue;
+    // Always symlink _builtin skills for all native-skill backends
+    let autoSkillNames: string[] = [];
+    try {
+      autoSkillNames = await fs.readdir(autoSkillsDir);
+    } catch {
+      // _builtin dir not ready yet, skip
+    }
+    for (const skillName of autoSkillNames) {
+      const sourceSkillDir = path.join(autoSkillsDir, skillName);
+      const targetSkillDir = path.join(targetSkillsDir, skillName);
+      try {
+        await fs.stat(sourceSkillDir);
+        try {
+          await fs.lstat(targetSkillDir);
+          // Already exists, skip
+        } catch {
+          await fs.symlink(sourceSkillDir, targetSkillDir, 'junction');
+          console.log(`[setupAssistantWorkspace] Symlinked builtin skill: ${skillName} -> ${targetSkillDir}`);
+        }
+      } catch {
+        console.warn(`[setupAssistantWorkspace] Builtin skill directory not found: ${sourceSkillDir}`);
+      }
+    }
+
+    // Symlink optional enabled skills
+    for (const skillName of options.enabledSkills ?? []) {
+      // Skip if already symlinked as a builtin skill
+      if (autoSkillNames.includes(skillName)) continue;
 
       // Try builtin-skills/ first, then user skills/
       const builtinCandidate = path.join(getBuiltinSkillsCopyDir(), skillName);
@@ -81,7 +126,7 @@ export async function setupAssistantWorkspace(
           await fs.lstat(targetSkillDir);
           // Already exists, skip
         } catch {
-          await fs.symlink(sourceSkillDir, targetSkillDir, 'dir');
+          await fs.symlink(sourceSkillDir, targetSkillDir, 'junction');
           console.log(`[setupAssistantWorkspace] Symlinked skill: ${skillName} -> ${targetSkillDir}`);
         }
       } catch {

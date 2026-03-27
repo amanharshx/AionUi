@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { ipcBridge } from '@/common';
 import { useInputFocusRing } from '@/renderer/hooks/chat/useInputFocusRing';
 import SlashCommandMenu, { type SlashCommandMenuItem } from '@/renderer/components/chat/SlashCommandMenu';
 import { useSlashCommandController } from '@/renderer/hooks/chat/useSlashCommandController';
@@ -21,6 +22,8 @@ import { useDragUpload } from '@renderer/hooks/file/useDragUpload';
 import { useLatestRef } from '@renderer/hooks/ui/useLatestRef';
 import { usePasteService } from '@renderer/hooks/file/usePasteService';
 import type { FileMetadata } from '@renderer/services/FileService';
+import { useUploadState } from '@renderer/hooks/file/useUploadState';
+import UploadProgressBar from '@renderer/components/media/UploadProgressBar';
 import { allSupportedExts } from '@renderer/services/FileService';
 import './sendbox.css';
 
@@ -79,6 +82,8 @@ const SendBox: React.FC<{
   const singleLineWidthRef = useRef<number>(0);
   const measurementCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const mobileUserFocusIntentUntilRef = useRef(0);
+  const warmedConversationRef = useRef<string | undefined>(undefined);
+  const warmupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestInputRef = useLatestRef(input);
   const setInputRef = useLatestRef(setInput);
 
@@ -201,6 +206,7 @@ const SendBox: React.FC<{
     conversationId: conversationContext?.conversationId,
   });
 
+  const { isUploading } = useUploadState('sendbox');
   const [message, context] = Message.useMessage();
 
   const builtinSlashCommands = useMemo<SlashCommandItem[]>(() => {
@@ -298,8 +304,23 @@ const SendBox: React.FC<{
     mobileUserFocusIntentUntilRef.current = 0;
     handlePasteFocus();
     setIsInputFocused(true);
-  }, [handlePasteFocus, isMobile]);
+
+    // Pre-warm worker bootstrap after focus stays for 1s (debounce).
+    // Avoids triggering warmup for every conversation during rapid switching.
+    const cid = conversationContext?.conversationId;
+    if (cid && warmedConversationRef.current !== cid) {
+      if (warmupTimerRef.current) clearTimeout(warmupTimerRef.current);
+      warmupTimerRef.current = setTimeout(() => {
+        warmedConversationRef.current = cid;
+        ipcBridge.conversation.warmup.invoke({ conversation_id: cid }).catch(() => {});
+      }, 1000);
+    }
+  }, [handlePasteFocus, isMobile, conversationContext?.conversationId]);
   const handleInputBlur = useCallback(() => {
+    if (warmupTimerRef.current) {
+      clearTimeout(warmupTimerRef.current);
+      warmupTimerRef.current = null;
+    }
     setIsInputFocused(false);
   }, []);
 
@@ -344,7 +365,7 @@ const SendBox: React.FC<{
   };
 
   // Calculate button disabled state and style
-  const isButtonDisabled = disabled || (!input.trim() && domSnippets.length === 0);
+  const isButtonDisabled = disabled || isUploading || (!input.trim() && domSnippets.length === 0);
   const buttonStyle = {
     backgroundColor: isButtonDisabled ? undefined : '#000000',
     borderColor: isButtonDisabled ? undefined : '#000000',
@@ -425,6 +446,7 @@ const SendBox: React.FC<{
             </div>
           )}
         </div>
+        <UploadProgressBar source='sendbox' />
         <div
           className={isSingleLine ? 'flex items-center gap-2 w-full min-w-0 overflow-hidden' : 'w-full overflow-hidden'}
         >
