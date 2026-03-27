@@ -1,6 +1,6 @@
 import { ipcBridge } from '@/common';
 import { Message } from '@arco-design/web-react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 type BtwCommandState = {
@@ -17,15 +17,30 @@ const INITIAL_STATE: BtwCommandState = {
   question: '',
 };
 
-export function useBtwCommand(conversationId?: string) {
+export function useBtwCommand(conversationId?: string, enabled = true) {
   const { t } = useTranslation();
   const requestIdRef = useRef(0);
+  const previousConversationIdRef = useRef(conversationId);
+  const previousEnabledRef = useRef(enabled);
   const [state, setState] = useState<BtwCommandState>(INITIAL_STATE);
 
   const dismiss = useCallback(() => {
     requestIdRef.current += 1;
     setState(INITIAL_STATE);
   }, []);
+
+  useEffect(() => {
+    const conversationChanged = previousConversationIdRef.current !== conversationId;
+    const eligibilityDisabled = previousEnabledRef.current && !enabled;
+
+    previousConversationIdRef.current = conversationId;
+    previousEnabledRef.current = enabled;
+
+    if ((conversationChanged || eligibilityDisabled) && state.isOpen) {
+      requestIdRef.current += 1;
+      setState(INITIAL_STATE);
+    }
+  }, [conversationId, enabled, state.isOpen]);
 
   const ask = useCallback(
     async (question: string) => {

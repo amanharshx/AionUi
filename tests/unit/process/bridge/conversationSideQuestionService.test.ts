@@ -139,7 +139,7 @@ describe('ConversationSideQuestionService', () => {
       id: 'conv-1',
       type: 'acp',
       name: 'ACP Conversation',
-      extra: { backend: 'claude' },
+      extra: { backend: 'opencode' },
       createTime: Date.now(),
       modifyTime: Date.now(),
     } as TChatConversation;
@@ -148,6 +148,27 @@ describe('ConversationSideQuestionService', () => {
     await expect(service.ask('conv-1', 'what model are we using?')).resolves.toEqual({
       status: 'unsupported',
     });
+  });
+
+  it('returns unsupported for non-claude ACP conversations even with session metadata', async () => {
+    const conversation = {
+      id: 'conv-1',
+      type: 'acp',
+      name: 'ACP Conversation',
+      extra: {
+        acpSessionId: 'parent-session-1',
+        backend: 'opencode',
+        workspace: '/tmp/ws',
+      },
+      createTime: Date.now(),
+      modifyTime: Date.now(),
+    } as TChatConversation;
+    const service = new ConversationSideQuestionService(makeService(conversation), makeRepo());
+
+    await expect(service.ask('conv-1', 'what file did we use?')).resolves.toEqual({
+      status: 'unsupported',
+    });
+    expect(mockAcpConnect).not.toHaveBeenCalled();
   });
 
   it('uses an ACP forked session when ACP session metadata is available', async () => {
@@ -365,7 +386,7 @@ describe('ConversationSideQuestionService', () => {
     expect(mockAcpCancelPrompt).toHaveBeenCalled();
   });
 
-  it('uses a saved provider config and returns the generated answer', async () => {
+  it('returns unsupported for provider-backed conversations outside Claude Code', async () => {
     const conversation = makeConversation();
     const service = new ConversationSideQuestionService(
       makeService(conversation),
@@ -420,9 +441,8 @@ describe('ConversationSideQuestionService', () => {
     });
 
     await expect(service.ask('conv-1', 'what config file were we using?')).resolves.toEqual({
-      status: 'ok',
-      answer: 'You were using `config/aion.json`.',
+      status: 'unsupported',
     });
-    expect(mockCreateRotatingClient).toHaveBeenCalledOnce();
+    expect(mockCreateRotatingClient).not.toHaveBeenCalled();
   });
 });

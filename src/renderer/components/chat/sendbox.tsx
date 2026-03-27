@@ -60,6 +60,7 @@ const SendBox: React.FC<{
   slashCommands?: SlashCommandItem[];
   onSlashBuiltinCommand?: (name: string) => void;
   hasPendingAttachments?: boolean;
+  enableBtw?: boolean;
 }> = ({
   onSend,
   onStop,
@@ -79,6 +80,7 @@ const SendBox: React.FC<{
   slashCommands = [],
   onSlashBuiltinCommand,
   hasPendingAttachments = false,
+  enableBtw = false,
 }) => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
@@ -225,20 +227,21 @@ const SendBox: React.FC<{
     t,
     messageApi: message,
   });
-  const btwCommand = useBtwCommand(conversationContext?.conversationId);
+  const btwCommand = useBtwCommand(conversationContext?.conversationId, enableBtw);
   const btwQuestion = useMemo(() => extractBtwQuestion(input), [input]);
-  const isBtwInput = btwQuestion !== null;
+  const isBtwInput = enableBtw && btwQuestion !== null;
 
   const builtinSlashCommands = useMemo<SlashCommandItem[]>(() => {
-    const commands: SlashCommandItem[] = [
-      {
+    const commands: SlashCommandItem[] = [];
+    if (enableBtw) {
+      commands.push({
         name: 'btw',
         description: t('conversation.sideQuestion.description'),
         kind: 'builtin',
         source: 'builtin',
         selectionBehavior: 'insert',
-      },
-    ];
+      });
+    }
     if (onSlashBuiltinCommand) {
       commands.push({
         name: 'open',
@@ -439,7 +442,7 @@ const SendBox: React.FC<{
   }, []);
 
   const sendMessageHandler = () => {
-    if (btwQuestion !== null) {
+    if (enableBtw && btwQuestion !== null) {
       const normalizedQuestion = btwQuestion.trim();
       if (!normalizedQuestion) {
         message.warning(t('conversation.sideQuestion.emptyQuestion'));
