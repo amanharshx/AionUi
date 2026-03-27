@@ -314,6 +314,7 @@ export type I18nKey =
   | 'conversation.sideQuestion.parentTaskRunning'
   | 'conversation.sideQuestion.started'
   | 'conversation.sideQuestion.title'
+  | 'conversation.sideQuestion.toolsRequired'
   | 'conversation.sideQuestion.unsupported'
   | 'conversation.skill_generator.description'
   | 'conversation.skill_generator.failed'

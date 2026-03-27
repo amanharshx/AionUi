@@ -191,6 +191,7 @@
     "alreadyRunning": "Zaten çalışan bir yan soru var.",
     "attachmentsNotAllowed": "Yan sorular dosya veya DOM parçacıkları içeremez.",
     "emptyQuestion": "/btw sonrasına bir soru yazın.",
+    "toolsRequired": "/btw yalnızca bu konuşmada zaten mevcut olan bilgilere dayanarak yanıt verebilir. Arama yapma, göz atma veya yeni bilgi getirme erişimi yoktur.",
     "error": "Yan soru yanıtlanamadı."
   },
   "contextUsage": {
