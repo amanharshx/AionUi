@@ -6,6 +6,12 @@ const mockWarning = vi.fn();
 const mockAsk = vi.fn();
 const mockDismiss = vi.fn();
 const mockBtwOverlay = vi.fn(() => React.createElement('div', {}, 'BtwOverlay'));
+const mockBtwState = {
+  answer: '',
+  isLoading: false,
+  isOpen: false,
+  question: '',
+};
 
 const mockUseConversationContextSafe = vi.fn(() => ({ conversationId: 'conv-1' }));
 const mockUseLayoutContext = vi.fn(() => ({ isMobile: false }));
@@ -106,10 +112,7 @@ vi.mock('@/renderer/components/chat/BtwOverlay/useBtwCommand', () => ({
   useBtwCommand: () => ({
     ask: mockAsk,
     dismiss: mockDismiss,
-    answer: '',
-    isLoading: false,
-    isOpen: false,
-    question: '',
+    ...mockBtwState,
   }),
 }));
 
@@ -163,6 +166,10 @@ import SendBox from '@/renderer/components/chat/sendbox';
 describe('SendBox /btw handling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBtwState.answer = '';
+    mockBtwState.isLoading = false;
+    mockBtwState.isOpen = false;
+    mockBtwState.question = '';
     mockUsePreviewContext.mockReturnValue({
       setSendBoxHandler: vi.fn(),
       domSnippets: [],
@@ -201,6 +208,24 @@ describe('SendBox /btw handling', () => {
 
     expect(mockAsk).not.toHaveBeenCalled();
     expect(mockWarning).toHaveBeenCalledWith('conversation.sideQuestion.attachmentsNotAllowed');
+  });
+
+  it('blocks a second /btw while one is already running', () => {
+    mockBtwState.isLoading = true;
+    mockBtwState.isOpen = true;
+    mockBtwState.question = 'existing side question';
+
+    const { container } = render(
+      <SendBox value='/btw what file did we use?' onChange={vi.fn()} onSend={vi.fn()} loading />
+    );
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+
+    fireEvent.keyDown(textarea!, { key: 'Enter' });
+
+    expect(mockAsk).not.toHaveBeenCalled();
+    expect(mockWarning).toHaveBeenCalledWith('conversation.sideQuestion.alreadyRunning');
   });
 
   it('passes parent task running state to the btw overlay', () => {

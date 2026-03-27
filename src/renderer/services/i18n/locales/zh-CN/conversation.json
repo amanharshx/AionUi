@@ -192,6 +192,7 @@
     "parentTaskRunning": "主任务仍在后台继续运行。",
     "dismissHint": "按 Escape、Enter 或 Space 关闭",
     "unsupported": "当前会话暂不支持顺便提问。",
+    "alreadyRunning": "已有一个顺便提问正在进行中。",
     "attachmentsNotAllowed": "顺便提问不能附带文件或 DOM 片段。",
     "emptyQuestion": "请在 /btw 后输入问题。",
     "error": "顺便提问失败。"

@@ -192,6 +192,7 @@
     "parentTaskRunning": "主任務仍在背景持續執行。",
     "dismissHint": "按 Escape、Enter 或 Space 關閉",
     "unsupported": "目前會話暫不支援順便提問。",
+    "alreadyRunning": "已有一個順便提問正在進行中。",
     "attachmentsNotAllowed": "順便提問不能附帶檔案或 DOM 片段。",
     "emptyQuestion": "請在 /btw 後輸入問題。",
     "error": "順便提問失敗。"
