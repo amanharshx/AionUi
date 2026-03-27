@@ -9,6 +9,7 @@ import { GeminiAgent, GeminiApprovalStore } from '@process/agent/gemini';
 import type { TChatConversation } from '@/common/config/storage';
 import type { IAgentManager } from '@process/task/IAgentManager';
 import type { IConversationService } from '@process/services/IConversationService';
+import type { IConversationRepository } from '@process/services/database/IConversationRepository';
 import type { IWorkerTaskManager } from '@process/task/IWorkerTaskManager';
 import { ipcBridge } from '@/common';
 import { getSkillsDir, getBuiltinSkillsCopyDir, getSystemDir, ProcessChat } from '@process/utils/initStorage';
@@ -20,6 +21,7 @@ import { refreshTrayMenu } from '@process/utils/tray';
 import { copyFilesToDirectory, readDirectoryRecursive } from '@process/utils';
 import { computeOpenClawIdentityHash } from '@process/utils/openclawUtils';
 import { migrateConversationToDatabase } from './migrationUtils';
+import { ConversationSideQuestionService } from './services/ConversationSideQuestionService';
 
 const refreshTrayMenuSafely = async (): Promise<void> => {
   try {
@@ -31,8 +33,11 @@ const refreshTrayMenuSafely = async (): Promise<void> => {
 
 export function initConversationBridge(
   conversationService: IConversationService,
-  workerTaskManager: IWorkerTaskManager
+  workerTaskManager: IWorkerTaskManager,
+  conversationRepo: IConversationRepository
 ): void {
+  const sideQuestionService = new ConversationSideQuestionService(conversationService, conversationRepo);
+
   const emitConversationListChanged = (
     conversation: Pick<TChatConversation, 'id' | 'source'>,
     action: 'created' | 'updated' | 'deleted'
@@ -385,6 +390,34 @@ export function initConversationBridge(
       const commands = await task.loadAcpSlashCommands();
       return { success: true, data: { commands } };
     } catch (error) {
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
+  ipcBridge.conversation.askSideQuestion.provider(async ({ conversation_id, question }) => {
+    const trimmedQuestion = question.trim();
+    console.info('[conversationBridge] /btw request received', {
+      conversationId: conversation_id,
+      questionLength: trimmedQuestion.length,
+    });
+    try {
+      const result = await sideQuestionService.ask(conversation_id, question);
+      console.info('[conversationBridge] /btw request completed', {
+        conversationId: conversation_id,
+        status: result.status,
+      });
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error) {
+      console.error('[conversationBridge] /btw request failed', {
+        conversationId: conversation_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return {
         success: false,
         msg: error instanceof Error ? error.message : String(error),

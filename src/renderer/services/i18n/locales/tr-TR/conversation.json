@@ -178,6 +178,19 @@
     "switchedToAgent": "Switched to {{agent}}",
     "switchAgentFailed": "Failed to switch agent"
   },
+  "sideQuestion": {
+    "title": "Kısa Soru",
+    "description": "Mevcut konuşma hakkında hızlı bir yan soru sor",
+    "started": "Yan soru başlatılıyor...",
+    "answered": "Yan soru yanıtlandı.",
+    "loading": "Düşünüyor...",
+    "parentTaskRunning": "Ana görev arka planda çalışmaya devam ediyor.",
+    "dismissHint": "Kapatmak için Escape, Enter veya Space tuşuna basın",
+    "unsupported": "Bu konuşma için yan sorular kullanılamıyor.",
+    "attachmentsNotAllowed": "Yan sorular dosya veya DOM parçacıkları içeremez.",
+    "emptyQuestion": "/btw sonrasına bir soru yazın.",
+    "error": "Yan soru yanıtlanamadı."
+  },
   "contextUsage": {
     "contextUsed": "bağlam kullanıldı"
   },

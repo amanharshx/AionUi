@@ -67,6 +67,7 @@ const registerMocks = () => {
         responseSearchWorkSpace: { invoke: vi.fn() },
         stop: createCommand('conversation.stop'),
         getSlashCommands: createCommand('conversation.getSlashCommands'),
+        askSideQuestion: createCommand('conversation.askSideQuestion'),
         sendMessage: createCommand('conversation.sendMessage'),
         warmup: createCommand('conversation.warmup'),
         responseStream: { emit: vi.fn() },
@@ -85,6 +86,7 @@ const registerMocks = () => {
   vi.doMock('@process/utils/initStorage', () => ({
     getSkillsDir: vi.fn(() => '/mock/skills'),
     ProcessChat: { get: vi.fn(async () => []) },
+    ProcessConfig: { get: vi.fn(async () => []) },
   }));
 
   vi.doMock('@/process/task/agentUtils', () => ({
@@ -111,7 +113,13 @@ const registerMocks = () => {
 
 const getProvider = async (key: string): Promise<Provider> => {
   const mod = await import('@process/bridge/conversationBridge');
-  mod.initConversationBridge(mockConversationService as any, mockWorkerTaskManager as any);
+  mod.initConversationBridge(
+    mockConversationService as any,
+    mockWorkerTaskManager as any,
+    {
+      getMessages: vi.fn(async () => ({ data: [], total: 0, hasMore: false })),
+    } as any
+  );
 
   const provider = handlers[key];
   if (!provider) {

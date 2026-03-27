@@ -239,6 +239,7 @@ const AcpSendBox: React.FC<{
         onStop={handleStop}
         className='z-10'
         onFilesAdded={handleFilesAdded}
+        hasPendingAttachments={uploadFile.length > 0 || atPath.length > 0}
         supportedExts={allSupportedExts}
         defaultMultiLine={true}
         lockMultiLine={true}
