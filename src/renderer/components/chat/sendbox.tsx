@@ -445,6 +445,10 @@ const SendBox: React.FC<{
         message.warning(t('conversation.sideQuestion.emptyQuestion'));
         return;
       }
+      if (btwCommand.isLoading) {
+        message.warning(t('conversation.sideQuestion.alreadyRunning'));
+        return;
+      }
       if (hasPendingAttachments || domSnippets.length > 0) {
         message.warning(t('conversation.sideQuestion.attachmentsNotAllowed'));
         return;

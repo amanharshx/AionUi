@@ -192,6 +192,7 @@
     "parentTaskRunning": "Main task still running in the background.",
     "dismissHint": "Press Escape, Enter, or Space to dismiss",
     "unsupported": "Side questions are not available for this conversation.",
+    "alreadyRunning": "A side question is already running.",
     "attachmentsNotAllowed": "Side questions cannot include files or DOM snippets.",
     "emptyQuestion": "Please enter a side question after /btw.",
     "error": "Failed to answer the side question."

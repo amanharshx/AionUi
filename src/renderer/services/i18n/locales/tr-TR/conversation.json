@@ -187,6 +187,7 @@
     "parentTaskRunning": "Ana görev arka planda çalışmaya devam ediyor.",
     "dismissHint": "Kapatmak için Escape, Enter veya Space tuşuna basın",
     "unsupported": "Bu konuşma için yan sorular kullanılamıyor.",
+    "alreadyRunning": "Zaten çalışan bir yan soru var.",
     "attachmentsNotAllowed": "Yan sorular dosya veya DOM parçacıkları içeremez.",
     "emptyQuestion": "/btw sonrasına bir soru yazın.",
     "error": "Yan soru yanıtlanamadı."

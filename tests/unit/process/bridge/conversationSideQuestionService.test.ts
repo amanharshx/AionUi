@@ -5,6 +5,7 @@ import type { IConversationService } from '@/process/services/IConversationServi
 
 const {
   mockAcpConnect,
+  mockAcpCancelPrompt,
   mockAcpDisconnect,
   mockAcpNewSession,
   mockAcpSendPrompt,
@@ -13,6 +14,7 @@ const {
   mockProcessConfigGet,
 } = vi.hoisted(() => ({
   mockAcpConnect: vi.fn(),
+  mockAcpCancelPrompt: vi.fn(),
   mockAcpDisconnect: vi.fn(),
   mockAcpNewSession: vi.fn(),
   mockAcpSendPrompt: vi.fn(),
@@ -45,7 +47,7 @@ vi.mock('@process/agent/acp/AcpConnection', () => ({
     sendPrompt = (...args: unknown[]) => mockAcpSendPrompt(this, ...args);
     disconnect = (...args: unknown[]) => mockAcpDisconnect(...args);
     setPromptTimeout = (...args: unknown[]) => mockAcpSetPromptTimeout(...args);
-    cancelPrompt = vi.fn();
+    cancelPrompt = (...args: unknown[]) => mockAcpCancelPrompt(...args);
   },
 }));
 
@@ -100,6 +102,7 @@ describe('ConversationSideQuestionService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAcpConnect.mockResolvedValue(undefined);
+    mockAcpCancelPrompt.mockReset();
     mockAcpNewSession.mockResolvedValue({ sessionId: 'fork-1' });
     mockAcpSendPrompt.mockImplementation(async (connection: {
       onEndTurn: () => void;
@@ -222,6 +225,144 @@ describe('ConversationSideQuestionService', () => {
     await expect(service.ask('conv-1', 'what file did we use?')).resolves.toEqual({
       status: 'unsupported',
     });
+  });
+
+  it('rejects when the ACP side question times out', async () => {
+    vi.useFakeTimers();
+    const conversation = {
+      id: 'conv-1',
+      type: 'acp',
+      name: 'ACP Conversation',
+      extra: {
+        acpSessionId: 'parent-session-1',
+        backend: 'claude',
+        workspace: '/tmp/ws',
+      },
+      createTime: Date.now(),
+      modifyTime: Date.now(),
+    } as TChatConversation;
+    const service = new ConversationSideQuestionService(makeService(conversation), makeRepo());
+
+    mockProcessConfigGet.mockImplementation(async (key: string) => {
+      if (key === 'model.config') {
+        return [];
+      }
+      if (key === 'acp.config') {
+        return {
+          claude: {
+            cliPath: 'claude',
+          },
+        };
+      }
+      return undefined;
+    });
+    mockAcpSendPrompt.mockImplementationOnce(() => new Promise(() => {}));
+
+    const promise = service.ask('conv-1', 'what file did we use?');
+    const expectation = expect(promise).rejects.toThrow('ACP /btw timed out.');
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await expectation;
+    expect(mockAcpDisconnect).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('rejects when the ACP side question triggers a permission request', async () => {
+    const conversation = {
+      id: 'conv-1',
+      type: 'acp',
+      name: 'ACP Conversation',
+      extra: {
+        acpSessionId: 'parent-session-1',
+        backend: 'claude',
+        workspace: '/tmp/ws',
+      },
+      createTime: Date.now(),
+      modifyTime: Date.now(),
+    } as TChatConversation;
+    const service = new ConversationSideQuestionService(makeService(conversation), makeRepo());
+
+    mockProcessConfigGet.mockImplementation(async (key: string) => {
+      if (key === 'model.config') {
+        return [];
+      }
+      if (key === 'acp.config') {
+        return {
+          claude: {
+            cliPath: 'claude',
+          },
+        };
+      }
+      return undefined;
+    });
+    mockAcpSendPrompt.mockImplementationOnce(async (connection: {
+      onPermissionRequest: (data: any) => Promise<{ optionId: string }>;
+    }) => {
+      await connection.onPermissionRequest({
+        options: [{ kind: 'reject_once', name: 'Reject', optionId: 'reject_once' }],
+        sessionId: 'fork-1',
+        toolCall: {
+          title: 'Bash',
+          toolCallId: 'tool-1',
+        },
+      });
+      return {};
+    });
+
+    await expect(service.ask('conv-1', 'what file did we use?')).rejects.toThrow(
+      'ACP /btw requires permission and cannot continue.'
+    );
+    expect(mockAcpCancelPrompt).toHaveBeenCalled();
+  });
+
+  it('rejects when the ACP side question attempts a tool call', async () => {
+    const conversation = {
+      id: 'conv-1',
+      type: 'acp',
+      name: 'ACP Conversation',
+      extra: {
+        acpSessionId: 'parent-session-1',
+        backend: 'claude',
+        workspace: '/tmp/ws',
+      },
+      createTime: Date.now(),
+      modifyTime: Date.now(),
+    } as TChatConversation;
+    const service = new ConversationSideQuestionService(makeService(conversation), makeRepo());
+
+    mockProcessConfigGet.mockImplementation(async (key: string) => {
+      if (key === 'model.config') {
+        return [];
+      }
+      if (key === 'acp.config') {
+        return {
+          claude: {
+            cliPath: 'claude',
+          },
+        };
+      }
+      return undefined;
+    });
+    mockAcpSendPrompt.mockImplementationOnce(async (connection: {
+      onSessionUpdate: (data: any) => void;
+    }) => {
+      connection.onSessionUpdate({
+        sessionId: 'fork-1',
+        update: {
+          kind: 'execute',
+          sessionUpdate: 'tool_call',
+          status: 'pending',
+          title: 'Bash',
+          toolCallId: 'tool-1',
+        },
+      });
+      return {};
+    });
+
+    await expect(service.ask('conv-1', 'what file did we use?')).rejects.toThrow(
+      'ACP /btw attempted to use tools.'
+    );
+    expect(mockAcpCancelPrompt).toHaveBeenCalled();
   });
 
   it('uses a saved provider config and returns the generated answer', async () => {

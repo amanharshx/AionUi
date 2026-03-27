@@ -192,6 +192,7 @@
     "parentTaskRunning": "메인 작업은 백그라운드에서 계속 실행 중입니다.",
     "dismissHint": "Escape, Enter, Space로 닫기",
     "unsupported": "이 대화에서는 보조 질문을 사용할 수 없습니다.",
+    "alreadyRunning": "보조 질문이 이미 실행 중입니다.",
     "attachmentsNotAllowed": "보조 질문에는 파일이나 DOM 스니펫을 첨부할 수 없습니다.",
     "emptyQuestion": "/btw 뒤에 질문을 입력해 주세요.",
     "error": "보조 질문에 답하지 못했습니다."
