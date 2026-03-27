@@ -33,14 +33,7 @@ describe('BtwOverlay keyboard dismissal', () => {
     const onDismiss = vi.fn();
 
     render(
-      <BtwOverlay
-        answer=''
-        isLoading
-        isOpen
-        onDismiss={onDismiss}
-        parentTaskRunning
-        question='what file did we use?'
-      />
+      <BtwOverlay answer='' isLoading isOpen onDismiss={onDismiss} parentTaskRunning question='what file did we use?' />
     );
 
     fireEvent.keyDown(window, { key: 'Enter' });
