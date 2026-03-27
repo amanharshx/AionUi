@@ -196,6 +196,7 @@
     "alreadyRunning": "已有一个顺便提问正在进行中。",
     "attachmentsNotAllowed": "顺便提问不能附带文件或 DOM 片段。",
     "emptyQuestion": "请在 /btw 后输入问题。",
+    "toolsRequired": "/btw 只能根据当前对话中已有的内容作答，无法搜索、浏览或获取新信息。",
     "error": "顺便提问失败。"
   },
   "contextUsage": {

@@ -196,6 +196,7 @@
     "alreadyRunning": "已有一個順便提問正在進行中。",
     "attachmentsNotAllowed": "順便提問不能附帶檔案或 DOM 片段。",
     "emptyQuestion": "請在 /btw 後輸入問題。",
+    "toolsRequired": "/btw 只能根據目前對話中已有的內容作答，無法搜尋、瀏覽或取得新資訊。",
     "error": "順便提問失敗。"
   },
   "contextUsage": {

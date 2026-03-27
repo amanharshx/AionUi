@@ -196,6 +196,7 @@
     "alreadyRunning": "보조 질문이 이미 실행 중입니다.",
     "attachmentsNotAllowed": "보조 질문에는 파일이나 DOM 스니펫을 첨부할 수 없습니다.",
     "emptyQuestion": "/btw 뒤에 질문을 입력해 주세요.",
+    "toolsRequired": "/btw는 이 대화에 이미 있는 내용만으로 답변할 수 있습니다. 검색, 탐색 또는 새로운 정보를 가져올 수 없습니다.",
     "error": "보조 질문에 답하지 못했습니다."
   },
   "contextUsage": {
