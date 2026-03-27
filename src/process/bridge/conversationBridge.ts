@@ -398,17 +398,8 @@ export function initConversationBridge(
   });
 
   ipcBridge.conversation.askSideQuestion.provider(async ({ conversation_id, question }) => {
-    const trimmedQuestion = question.trim();
-    console.info('[conversationBridge] /btw request received', {
-      conversationId: conversation_id,
-      questionLength: trimmedQuestion.length,
-    });
     try {
       const result = await sideQuestionService.ask(conversation_id, question);
-      console.info('[conversationBridge] /btw request completed', {
-        conversationId: conversation_id,
-        status: result.status,
-      });
       return {
         success: true,
         data: result,

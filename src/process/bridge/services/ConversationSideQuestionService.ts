@@ -179,17 +179,11 @@ export class ConversationSideQuestionService {
   async ask(conversationId: string, question: string): Promise<ConversationSideQuestionResult> {
     const trimmedQuestion = question.trim();
     if (!trimmedQuestion) {
-      console.info('[ConversationSideQuestionService] Rejected empty /btw question', {
-        conversationId,
-      });
       return { status: 'invalid', reason: 'emptyQuestion' };
     }
 
     const conversation = await this.conversationService.getConversation(conversationId);
     if (!conversation) {
-      console.info('[ConversationSideQuestionService] Conversation not found for /btw', {
-        conversationId,
-      });
       return { status: 'unsupported' };
     }
 
@@ -214,10 +208,6 @@ export class ConversationSideQuestionService {
       }
     }
 
-    console.info('[ConversationSideQuestionService] No supported /btw execution path available', {
-      conversationId,
-      conversationType: conversation.type,
-    });
     return { status: 'unsupported' };
   }
 
@@ -233,14 +223,6 @@ export class ConversationSideQuestionService {
     const client = await ClientFactory.createRotatingClient(resolvedProvider.provider, {
       proxy: resolvedProvider.proxy,
       rotatingOptions: { maxRetries: 2, retryDelay: 500 },
-    });
-    console.info('[ConversationSideQuestionService] Resolved provider for /btw', {
-      conversationId,
-      platform: resolvedProvider.provider.platform,
-      providerId: resolvedProvider.provider.id,
-      model: resolvedProvider.provider.useModel,
-      transcriptChars: transcript.length,
-      transcriptMessages: messagesResult.data.length,
     });
 
     const request: OpenAIChatCompletionParams = {
@@ -261,11 +243,6 @@ export class ConversationSideQuestionService {
     const completion = await completionClient.createChatCompletion(request);
 
     const answer = extractAnswerText(completion);
-    console.info('[ConversationSideQuestionService] /btw answer generated', {
-      conversationId,
-      answerLength: answer.length,
-      transport: 'provider',
-    });
     return {
       status: 'ok',
       answer: answer || 'The conversation context does not contain a clear answer.',
@@ -277,13 +254,6 @@ export class ConversationSideQuestionService {
     question: string,
     context: ResolvedAcpContext
   ): Promise<string> {
-    console.info('[ConversationSideQuestionService] Starting ACP /btw fork', {
-      backend: context.backend,
-      conversationId,
-      hasCliPath: Boolean(context.cliPath),
-      workspace: context.workspace,
-    });
-
     const connection = new AcpConnection();
     connection.setPromptTimeout(ACP_SIDE_QUESTION_PROMPT_TIMEOUT_SECONDS);
 
@@ -301,23 +271,12 @@ export class ConversationSideQuestionService {
           );
 
           try {
-            const response = await connection.newSession(context.workspace, {
+            await connection.newSession(context.workspace, {
               resumeSessionId: context.acpSessionId,
               forkSession: true,
               mcpServers: [],
             });
-            console.info('[ConversationSideQuestionService] ACP /btw fork session created', {
-              backend: context.backend,
-              conversationId,
-              forkedSessionId: response.sessionId,
-              parentSessionId: context.acpSessionId,
-            });
           } catch (error) {
-            console.info('[ConversationSideQuestionService] ACP /btw fork unsupported', {
-              backend: context.backend,
-              conversationId,
-              error: error instanceof Error ? error.message : String(error),
-            });
             throw new AcpSideQuestionUnsupportedError('ACP forked side questions are not supported for this backend.');
           }
 
@@ -330,12 +289,6 @@ export class ConversationSideQuestionService {
       );
 
       const answer = completion.getAnswer();
-      console.info('[ConversationSideQuestionService] ACP /btw answer generated', {
-        answerLength: answer.length,
-        backend: context.backend,
-        conversationId,
-        transport: 'acp',
-      });
       return answer;
     } finally {
       completion.dispose();
