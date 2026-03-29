@@ -164,4 +164,239 @@ describe('useConversationExport', () => {
 
     expect(error).toHaveBeenCalledWith('messages.export.prepareFailed');
   });
+
+  it('copies transcript to clipboard when copy action is selected', async () => {
+    const success = vi.fn();
+    const error = vi.fn();
+
+    const { result } = renderHook(() =>
+      useConversationExport({
+        conversationId: 'conv-1',
+        workspace: '/workspace',
+        t,
+        messageApi: { success, error },
+      })
+    );
+
+    await act(async () => {
+      await result.current.openExportFlow();
+    });
+
+    act(() => {
+      result.current.onSelectMenuItem('copy');
+    });
+
+    await waitFor(() => {
+      expect(mockCopyText).toHaveBeenCalledWith(expect.stringContaining('Visitor:\nhello export'));
+    });
+
+    expect(success).toHaveBeenCalledWith('messages.export.copySuccess');
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('reports error when clipboard copy fails', async () => {
+    const success = vi.fn();
+    const error = vi.fn();
+    mockCopyText.mockRejectedValueOnce(new Error('clipboard denied'));
+
+    const { result } = renderHook(() =>
+      useConversationExport({
+        conversationId: 'conv-1',
+        workspace: '/workspace',
+        t,
+        messageApi: { success, error },
+      })
+    );
+
+    await act(async () => {
+      await result.current.openExportFlow();
+    });
+
+    act(() => {
+      result.current.onSelectMenuItem('copy');
+    });
+
+    await waitFor(() => {
+      expect(error).toHaveBeenCalledWith('messages.export.copyFailed');
+    });
+
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('navigates menu items with ArrowDown and wraps around with ArrowUp', async () => {
+    const { result } = renderHook(() =>
+      useConversationExport({
+        conversationId: 'conv-1',
+        workspace: '/workspace',
+        t,
+        messageApi: { success: vi.fn(), error: vi.fn() },
+      })
+    );
+
+    await act(async () => {
+      await result.current.openExportFlow();
+    });
+
+    expect(result.current.activeIndex).toBe(0);
+
+    act(() => {
+      result.current.handleKeyDown({
+        key: 'ArrowDown',
+        shiftKey: false,
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent);
+    });
+    expect(result.current.activeIndex).toBe(1);
+
+    act(() => {
+      result.current.handleKeyDown({
+        key: 'ArrowUp',
+        shiftKey: false,
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent);
+    });
+    expect(result.current.activeIndex).toBe(0);
+
+    // ArrowUp from 0 wraps to last item
+    act(() => {
+      result.current.handleKeyDown({
+        key: 'ArrowUp',
+        shiftKey: false,
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent);
+    });
+    expect(result.current.activeIndex).toBe(1);
+  });
+
+  it('selects menu item with Enter key in menu step', async () => {
+    const success = vi.fn();
+    const error = vi.fn();
+
+    const { result } = renderHook(() =>
+      useConversationExport({
+        conversationId: 'conv-1',
+        workspace: '/workspace',
+        t,
+        messageApi: { success, error },
+      })
+    );
+
+    await act(async () => {
+      await result.current.openExportFlow();
+    });
+
+    expect(result.current.step).toBe('menu');
+    expect(result.current.activeIndex).toBe(0);
+
+    // Enter with activeIndex=0 → 'copy' action
+    act(() => {
+      result.current.handleKeyDown({
+        key: 'Enter',
+        shiftKey: false,
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent);
+    });
+
+    await waitFor(() => {
+      expect(mockCopyText).toHaveBeenCalled();
+    });
+  });
+
+  it('submits filename when Enter is pressed in filename step', async () => {
+    const success = vi.fn();
+    const error = vi.fn();
+
+    const { result } = renderHook(() =>
+      useConversationExport({
+        conversationId: 'conv-1',
+        workspace: '/workspace',
+        t,
+        messageApi: { success, error },
+      })
+    );
+
+    await act(async () => {
+      await result.current.openExportFlow();
+    });
+
+    act(() => {
+      result.current.onSelectMenuItem('save');
+    });
+
+    expect(result.current.step).toBe('filename');
+
+    act(() => {
+      result.current.handleKeyDown({
+        key: 'Enter',
+        shiftKey: false,
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent);
+    });
+
+    await waitFor(() => {
+      expect(mockWriteFile).toHaveBeenCalled();
+    });
+
+    expect(success).toHaveBeenCalled();
+  });
+
+  it('returns cached transcript without re-fetching on second call', async () => {
+    const success = vi.fn();
+    const error = vi.fn();
+
+    const { result } = renderHook(() =>
+      useConversationExport({
+        conversationId: 'conv-1',
+        workspace: '/workspace',
+        t,
+        messageApi: { success, error },
+      })
+    );
+
+    await act(async () => {
+      await result.current.openExportFlow();
+    });
+
+    // First copy triggers loadTranscript — builds and caches transcript
+    act(() => {
+      result.current.onSelectMenuItem('copy');
+    });
+    await waitFor(() => {
+      expect(mockCopyText).toHaveBeenCalledTimes(1);
+    });
+
+    // Second copy uses cached transcript — no additional IPC calls
+    act(() => {
+      result.current.onSelectMenuItem('copy');
+    });
+    await waitFor(() => {
+      expect(mockCopyText).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mockConversationGet).toHaveBeenCalledTimes(1);
+    expect(mockMessagesGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows unavailable error when base directory is empty', async () => {
+    const success = vi.fn();
+    const error = vi.fn();
+
+    const { result } = renderHook(() =>
+      useConversationExport({
+        conversationId: 'conv-1',
+        workspace: '/workspace',
+        t,
+        messageApi: { success, error },
+      })
+    );
+
+    // Do not call openExportFlow — baseDirectoryRef.current remains empty
+    await act(async () => {
+      await result.current.submitFilename();
+    });
+
+    expect(error).toHaveBeenCalledWith('messages.export.unavailable');
+    expect(success).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
 });
