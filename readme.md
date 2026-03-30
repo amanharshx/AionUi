@@ -566,6 +566,25 @@ brew install aionui
 - [Discord Community](https://discord.gg/2QAwJn7Egx) — English community
 - [WeChat Group](./resources/wx-5.png) — Chinese community
 
+---
+
+### Development Setup
+
+<p>
+  <img src="https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square" alt="Node.js 22+">
+  <img src="https://img.shields.io/badge/Bun-1.x-000000?style=flat-square" alt="Bun 1.x">
+</p>
+
+```bash
+git clone https://github.com/iOfficeAI/AionUi.git
+cd AionUi
+bun install
+bun run start        # development mode
+bun run test         # run tests
+bun run lint:fix     # lint & auto-fix
+bun run format       # format code
+```
+
 ### Contributing
 
 1. Fork this project
