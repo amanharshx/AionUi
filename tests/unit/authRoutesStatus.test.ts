@@ -195,4 +195,29 @@ describe('registerAuthRoutes /api/auth/status', () => {
       });
     });
   });
+
+  it('returns a 500 response when counting users fails', async () => {
+    mockHasUsers.mockResolvedValue(true);
+    mockCountUsers.mockRejectedValue(new Error('count failure'));
+
+    const { registerAuthRoutes } = await import('@process/webserver/routes/authRoutes');
+    const app = express();
+    registerAuthRoutes(app);
+
+    const handler = getAuthStatusHandler(app);
+    const res = {
+      json: vi.fn(),
+      status: vi.fn(() => res),
+    } as unknown as express.Response;
+
+    handler({} as express.Request, res, vi.fn());
+
+    await waitForAssertion(() => {
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'Internal server error',
+      });
+    });
+  });
 });
