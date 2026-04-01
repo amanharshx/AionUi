@@ -141,4 +141,44 @@ describe('registerAuthRoutes refresh endpoint', () => {
       token: 'new-token',
     });
   });
+
+  it('returns 400 when token is missing from request body', async () => {
+    const { registerAuthRoutes } = await import('@process/webserver/routes/authRoutes');
+    const app = express();
+    registerAuthRoutes(app);
+
+    const handler = getRefreshHandler(app);
+    const req = { body: {} } as express.Request;
+    const res = createResponseMock() as unknown as express.Response;
+
+    await handler(req, res, vi.fn());
+
+    expect(mockRefreshToken).not.toHaveBeenCalled();
+    expect((res as unknown as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(400);
+    expect((res as unknown as { json: ReturnType<typeof vi.fn> }).json).toHaveBeenCalledWith({
+      success: false,
+      error: 'Token is required',
+    });
+  });
+
+  it('returns 500 when refreshToken throws an error', async () => {
+    mockRefreshToken.mockRejectedValue(new Error('db error'));
+
+    const { registerAuthRoutes } = await import('@process/webserver/routes/authRoutes');
+    const app = express();
+    registerAuthRoutes(app);
+
+    const handler = getRefreshHandler(app);
+    const req = { body: { token: 'some-token' } } as express.Request;
+    const res = createResponseMock() as unknown as express.Response;
+
+    await handler(req, res, vi.fn());
+
+    expect(mockRefreshToken).toHaveBeenCalledWith('some-token');
+    expect((res as unknown as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(500);
+    expect((res as unknown as { json: ReturnType<typeof vi.fn> }).json).toHaveBeenCalledWith({
+      success: false,
+      error: 'Internal server error',
+    });
+  });
 });
