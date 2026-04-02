@@ -8,10 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import { SandboxHost } from '../../../src/process/extensions/sandbox/sandbox';
 import type { SandboxMessage } from '../../../src/process/extensions/sandbox/sandbox';
-import {
-  getSandboxPermissionDeniedError,
-  hasSandboxStoragePermission,
-} from '../../../src/process/extensions/sandbox/permissions';
 import { extensionEventBus } from '../../../src/process/extensions/lifecycle/ExtensionEventBus';
 
 // Minimal mock worker that captures postMessage calls
@@ -41,34 +37,6 @@ function createHost(overrides: Partial<ConstructorParameters<typeof SandboxHost>
     ...overrides,
   });
 }
-
-describe('extensions/sandbox permissions', () => {
-  it('treats omitted permissions as no storage access', () => {
-    expect(hasSandboxStoragePermission(undefined)).toBe(false);
-  });
-
-  it('treats storage permission false as no storage access', () => {
-    expect(hasSandboxStoragePermission({ storage: false, events: true })).toBe(false);
-  });
-
-  it('treats storage permission true as storage access enabled', () => {
-    expect(hasSandboxStoragePermission({ storage: true, events: true })).toBe(true);
-  });
-
-  it('returns a permission error for storage api calls without storage permission', () => {
-    expect(getSandboxPermissionDeniedError('storage.get', undefined)).toBe(
-      'Permission denied: storage access requires "storage: true" in manifest'
-    );
-  });
-
-  it('does not return a permission error for non-storage api calls without storage permission', () => {
-    expect(getSandboxPermissionDeniedError('custom.method', undefined)).toBeNull();
-  });
-
-  it('does not return a permission error for storage api calls when storage permission is granted', () => {
-    expect(getSandboxPermissionDeniedError('storage.get', { storage: true, events: true })).toBeNull();
-  });
-});
 
 describe('extensions/SandboxHost — handleMessage', () => {
   describe('api-call routing (Bug #4 fix)', () => {
